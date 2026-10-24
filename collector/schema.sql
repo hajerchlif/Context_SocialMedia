@@ -88,6 +88,19 @@ CREATE TABLE IF NOT EXISTS thread_queue (
     PRIMARY KEY (platform, raw_root)
 );
 
+ALTER TABLE thread_queue ADD COLUMN IF NOT EXISTS month TEXT;   -- for month-balanced thread collection
+
+-- discovery progress per seed and month (time-balanced discovery resumes where it stopped)
+CREATE TABLE IF NOT EXISTS discover_done (
+    platform  TEXT NOT NULL,
+    kind      TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    month     TEXT NOT NULL,
+    n         INTEGER,
+    done_at   TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (platform, kind, value, month)
+);
+
 CREATE TABLE IF NOT EXISTS llm_labels (
     post_uid     TEXT PRIMARY KEY,
     domain       TEXT,

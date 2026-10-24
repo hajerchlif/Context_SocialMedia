@@ -91,6 +91,11 @@ class Settings:
     # Telegram public channels (web preview t.me/s/<channel>, no account)
     enable_telegram_web: bool = field(default_factory=lambda: _bool("ENABLE_TELEGRAM_WEB", True))
 
+    # Time balance (same budget for every month DATE_FROM..DATE_TO)
+    discovery_posts_per_month: int = field(default_factory=lambda: int(_env("DISCOVERY_POSTS_PER_MONTH", "0")))
+    posts_per_user_month: int = field(default_factory=lambda: int(_env("POSTS_PER_USER_MONTH", "40")))
+    max_scan_per_user: int = field(default_factory=lambda: int(_env("MAX_SCAN_PER_USER", "0")))
+
     # Limits
     max_users_per_domain_hop1: int = field(default_factory=lambda: int(_env("MAX_USERS_HOP1", "2000")))
     max_users_per_domain_hop2: int = field(default_factory=lambda: int(_env("MAX_USERS_HOP2", "5000")))

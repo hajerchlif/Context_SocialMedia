@@ -72,7 +72,11 @@ svg text{fill:var(--muted);font-size:10px}
   <section class="c12 kpis" id="kpis"></section>
 
   <section class="card c8">
-    <h2>Posts par mois (date de publication)</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0">Posts par mois (date de publication)</h2>
+      <label class="muted" style="font-size:12px;cursor:pointer"><input type="checkbox" id="logscale"> échelle logarithmique</label>
+    </div>
+    <div id="balance" class="muted" style="font-size:12px;margin:6px 0 4px"></div>
     <div id="monthly"></div><div class="legend" id="mlegend"></div>
   </section>
   <section class="card c4">
@@ -160,12 +164,19 @@ function monthly(rows, dateFrom){
   const plats = [...new Set(rows.map(r=>r.platform))];
   const m = {}; rows.forEach(r => { (m[r.month] ||= {})[r.platform] = r.n; });
   const tot = months.map(k => plats.reduce((s,p)=>s+((m[k]||{})[p]||0),0));
-  const max = Math.max(1,...tot), W = 900, H = 220, pad = 34, bw = (W-pad)/months.length;
+  const LOG = $('logscale').checked, f = v => LOG ? Math.log10(1+v) : v;
+  const max = Math.max(1,...tot), fmax = f(max), W = 900, H = 220, pad = 34, bw = (W-pad)/months.length;
+  const nz = tot.filter(v=>v>0).sort((a,b)=>a-b), med = nz.length ? nz[Math.floor(nz.length/2)] : 0;
+  const empty_m = tot.filter(v=>v===0).length;
+  $('balance').innerHTML = `Équilibre temporel : min <b>${fmt(Math.min(...tot))}</b> · médiane <b>${fmt(med)}</b> · max <b>${fmt(max)}</b> posts/mois` +
+    (med ? ` · ratio max/médiane <b>${(max/med).toFixed(1)}×</b>` : '') + (empty_m ? ` · <span class="err">${empty_m} mois vides</span>` : '');
   let s = `<svg viewBox="0 0 ${W} ${H+24}" width="100%" role="img" aria-label="Posts par mois">`;
-  for(let i=0;i<=4;i++){ const y = H - (H-10)*i/4; s += `<line x1="${pad}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="0" y="${y+3}">${fmt(Math.round(max*i/4))}</text>`; }
+  for(let i=0;i<=4;i++){ const y = H - (H-10)*i/4; const lab = LOG ? Math.round(Math.pow(10, fmax*i/4)-1) : Math.round(max*i/4);
+    s += `<line x1="${pad}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="0" y="${y+3}">${fmt(lab)}</text>`; }
   months.forEach((k,i) => {
-    let y = H;
-    plats.forEach(p => { const v=(m[k]||{})[p]||0; if(!v) return; const h=(H-10)*v/max; y-=h;
+    let y = H, acc = 0;
+    plats.forEach(p => { const v=(m[k]||{})[p]||0; if(!v) return;
+      const h=(H-10)*(f(acc+v)-f(acc))/fmax; acc += v; y-=h;
       s += `<rect x="${pad+i*bw+1}" y="${y}" width="${Math.max(1,bw-2)}" height="${h}" fill="${col(p)}"><title>${k} · ${p} : ${fmt(v)}</title></rect>`; });
     if(k.endsWith('-01')||i===0) s += `<text x="${pad+i*bw}" y="${H+16}">${k.slice(0,4)}</text>`;
   });
@@ -174,6 +185,7 @@ function monthly(rows, dateFrom){
 }
 
 function render(j){
+  LAST = j;
   $('alert').hidden = !j.db_error;
   if(j.db_error) $('alert').textContent = 'Base de données injoignable : ' + j.db_error;
   const t = (j.totals||[])[0] || {};
@@ -241,6 +253,10 @@ async function tick(){
   try { const r = await fetch('/api/stats', {cache:'no-store'}); render(await r.json()); }
   catch(e){ $('livetxt').textContent = 'Tableau de bord déconnecté…'; $('live').className = 'dot'; }
 }
+let LAST = null;
+try { $('logscale').checked = localStorage.getItem('logscale') === '1'; } catch(e) {}
+$('logscale').addEventListener('change', () => { try { localStorage.setItem('logscale', $('logscale').checked ? '1' : '0'); } catch(e) {}
+  if (LAST) monthly(LAST.monthly||[], LAST.date_from); });
 tick(); setInterval(tick, 10000);
 </script>
 </body>

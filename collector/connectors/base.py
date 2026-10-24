@@ -30,6 +30,14 @@ class Connector:
             return True
         return self.s.date_from <= ts <= self.s.date_to
 
+    # --- time-windowed discovery (optional) ----------------------------------
+    def supports_window(self, kind: str) -> bool:
+        """True if search_window() can target a date range natively for this seed kind."""
+        return False
+
+    def search_window(self, query: str, kind: str, since, until, limit: int) -> Batch:
+        raise NotImplementedError
+
     # --- to implement -------------------------------------------------------
     def search(self, query: str, kind: str, limit: int) -> Batch:
         """Discovery: posts/accounts matching a query/hashtag/community. Fills discovered_users."""

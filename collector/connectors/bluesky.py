@@ -153,29 +153,38 @@ class BlueskyConnector(Connector):
             if raw:
                 b.discovered_users.append((raw, self.uid(raw)))
             return b
-        q = f"#{query}" if kind == "hashtag" else query
         if self._session():
-            cursor, n = None, 0
-            while n < limit:
-                params = {"q": q, "limit": 100, "since": self.s.date_from.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                          "until": self.s.date_to.strftime("%Y-%m-%dT%H:%M:%SZ"), "sort": "latest"}
-                if cursor:
-                    params["cursor"] = cursor
-                data = self._get("app.bsky.feed.searchPosts", params, auth=True)
-                posts = data.get("posts", [])
-                for post in posts:
-                    pb = self.post_to_batch(post, "search")
-                    pb.discovered_users.append((post["author"]["did"], self.uid(post["author"]["did"])))
-                    b.extend(pb)
-                n += len(posts)
-                cursor = data.get("cursor")
-                if not cursor or not posts:
-                    break
+            return self.search_window(query, kind, self.s.date_from, self.s.date_to, limit)
         else:
             # Without a session, discover accounts whose profile matches the query (public endpoint).
             data = self._get("app.bsky.actor.searchActors", {"q": query, "limit": min(100, limit)})
             for actor in data.get("actors", []):
                 b.discovered_users.append((actor["did"], self.uid(actor["did"])))
+        return b
+
+    def supports_window(self, kind: str) -> bool:
+        return kind in ("query", "hashtag") and bool(self._session())
+
+    def search_window(self, query: str, kind: str, since, until, limit: int) -> Batch:
+        """Full-text post search restricted to [since, until) — needs a (free) app-password session."""
+        b = Batch()
+        q = f"#{query}" if kind == "hashtag" else query
+        cursor, n = None, 0
+        while n < limit:
+            params = {"q": q, "limit": min(100, limit - n), "sort": "top",
+                      "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"), "until": until.strftime("%Y-%m-%dT%H:%M:%SZ")}
+            if cursor:
+                params["cursor"] = cursor
+            data = self._get("app.bsky.feed.searchPosts", params, auth=True)
+            posts = data.get("posts", [])
+            for post in posts:
+                pb = self.post_to_batch(post, "search")
+                pb.discovered_users.append((post["author"]["did"], self.uid(post["author"]["did"])))
+                b.extend(pb)
+            n += len(posts)
+            cursor = data.get("cursor")
+            if not cursor or not posts:
+                break
         return b
 
     def resolve(self, kind: str, value: str) -> str | None:

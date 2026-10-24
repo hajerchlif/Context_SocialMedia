@@ -148,3 +148,28 @@ def test_stackexchange_normalisation():
     ab = c._answer(a, "politics", b.posts[0].post_uid, b.posts[0].author_uid, "thread")
     assert ab.posts[0].parent_post_uid == b.posts[0].post_uid and ab.edges[0].type == "reply"
     assert c._site_tag("politics:elections", "tag") == [("politics", "elections")]
+
+
+def test_month_windows_and_cap():
+    from collector.balance import cap_batch, month_windows, root_months
+    from collector.models import Batch, PostRec
+    w = month_windows(dt.datetime(2023, 11, 15, tzinfo=dt.timezone.utc), dt.datetime(2024, 2, 3, tzinfo=dt.timezone.utc))
+    assert [m for m, _, _ in w] == ["2023-11", "2023-12", "2024-01", "2024-02"]
+    assert w[0][1].day == 15 and w[-1][2].day == 3
+    def post(i, author, y, m, root=None):
+        return PostRec(f"p{i}", "x", author, "t", dt.datetime(y, m, 1, tzinfo=dt.timezone.utc), root_post_uid=root or f"p{i}")
+    b = Batch(posts=[post(i, "a", 2024, 1) for i in range(5)] + [post(9, "a", 2024, 2), post(10, "b", 2024, 1)],
+              discovered_roots=[(f"r{i}", f"p{i}") for i in range(5)])
+    c = cap_batch(b, 2, by_author=True)
+    assert len(c.posts) == 4  # 2 of a/2024-01, 1 of a/2024-02, 1 of b/2024-01
+    assert len(c.discovered_roots) == 2
+    assert len(cap_batch(b, 2).posts) == 3  # per month only
+    rb = Batch(posts=[post(1, "a", 2024, 3), post(2, "b", 2024, 5, root="p0"), post(3, "c", 2024, 4, root="p0")])
+    assert root_months(rb) == {"p1": "2024-03", "p0": "2024-04"}
+
+
+def test_mastodon_snowflake():
+    from collector.connectors.mastodon import MastodonConnector
+    ts = dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc)
+    sid = int(MastodonConnector.snowflake(ts))
+    assert (sid >> 16) / 1000 == ts.timestamp()

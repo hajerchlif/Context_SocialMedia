@@ -73,13 +73,16 @@ class DB:
             )
         return len(items)
 
-    def enqueue_roots(self, platform: str, items: list[tuple[str, str]]) -> None:
+    def enqueue_roots(self, platform: str, items: list[tuple[str, str]], months: dict | None = None) -> None:
         if not items:
             return
+        months = months or {}
         with self.conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO thread_queue (platform, raw_root, root_uid) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
-                [(platform, raw, uid) for raw, uid in items],
+                """INSERT INTO thread_queue (platform, raw_root, root_uid, month) VALUES (%s,%s,%s,%s)
+                   ON CONFLICT (platform, raw_root) DO UPDATE
+                   SET month = COALESCE(thread_queue.month, EXCLUDED.month)""",
+                [(platform, raw, uid, months.get(uid)) for raw, uid in items],
             )
 
     def next_users(self, platform: str, limit: int, max_hop: int = 2) -> list[dict]:
@@ -89,9 +92,15 @@ class DB:
             (platform, max_hop, limit),
         ).fetchall()
 
-    def next_roots(self, platform: str, limit: int) -> list[dict]:
+    def next_roots(self, platform: str, limit: int, date_from: str = "2023-01") -> list[dict]:
+        """Round-robin over months: one thread per month, then a second per month, ... (time balance)."""
         return self.conn.execute(
-            "SELECT * FROM thread_queue WHERE platform=%s AND status='todo' LIMIT %s", (platform, limit)
+            """SELECT * FROM (
+                 SELECT *, row_number() OVER (PARTITION BY month ORDER BY root_uid) AS rn
+                 FROM thread_queue
+                 WHERE platform=%s AND status='todo' AND (month IS NULL OR month >= %s)) t
+               ORDER BY rn, month NULLS LAST LIMIT %s""",
+            (platform, date_from, limit),
         ).fetchall()
 
     def mark_user(self, platform: str, raw_id: str, status: str, user_uid: str | None = None) -> None:
@@ -127,14 +136,31 @@ class DB:
     def reid(self, uid: str, platform: str, raw_id: str) -> None:
         self.conn.execute("INSERT INTO reid_map VALUES (%s,%s,%s) ON CONFLICT DO NOTHING", (uid, platform, raw_id))
 
-    def unlabeled_posts(self, limit: int) -> list[dict]:
+    def unlabeled_posts(self, limit: int, date_from=None) -> list[dict]:
+        """Unlabelled posts, balanced over platform x month (round-robin), so Qwen's annotations
+        are not concentrated on the most recent weeks."""
         return self.conn.execute(
-            """SELECT p.post_uid, p.text, u.domain_hint FROM posts p
-               LEFT JOIN llm_labels l USING (post_uid) LEFT JOIN users u ON u.user_uid = p.author_uid
-               WHERE l.post_uid IS NULL AND p.text IS NOT NULL AND length(p.text) > 15
-               ORDER BY p.collected_at DESC LIMIT %s""",
-            (limit,),
+            """SELECT post_uid, text FROM (
+                 SELECT p.post_uid, p.text,
+                        row_number() OVER (PARTITION BY p.platform, date_trunc('month', p.created_at)
+                                           ORDER BY md5(p.post_uid)) AS rn
+                 FROM posts p LEFT JOIN llm_labels l USING (post_uid)
+                 WHERE l.post_uid IS NULL AND p.text IS NOT NULL AND length(p.text) > 15
+                   AND (%s::timestamptz IS NULL OR p.created_at >= %s::timestamptz)) t
+               ORDER BY rn LIMIT %s""",
+            (date_from, date_from, limit),
         ).fetchall()
+
+    def discover_months_done(self, platform: str, kind: str, value: str) -> set[str]:
+        rows = self.conn.execute("SELECT month FROM discover_done WHERE platform=%s AND kind=%s AND value=%s",
+                                 (platform, kind, value)).fetchall()
+        return {r["month"] for r in rows}
+
+    def mark_discover_month(self, platform: str, kind: str, value: str, month: str, n: int) -> None:
+        self.conn.execute(
+            """INSERT INTO discover_done (platform, kind, value, month, n) VALUES (%s,%s,%s,%s,%s)
+               ON CONFLICT (platform, kind, value, month) DO UPDATE SET n = EXCLUDED.n, done_at = now()""",
+            (platform, kind, value, month, n))
 
     def save_labels(self, rows: list[tuple]) -> None:
         if not rows:
