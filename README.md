@@ -1,56 +1,69 @@
-# Context_SocialMedia — Collecteur de données de réseaux sociaux (2023–2026)
+# Context_SocialMedia
 
-Collecteur multi-plateforme pour une recherche doctorale : contexte des publications → profils d'intérêts → domaines sémantiques ouverts → communautés.
+Collecteur de données de réseaux sociaux **2023 → aujourd'hui** pour la recherche doctorale
+*contexte des posts → profils d'intérêts → domaines sémantiques ouverts → communautés*.
 
-**Plateformes :**
-- Bluesky (principale) ;
-- Reddit (API officielle + archives) ;
-- Mastodon ;
-- YouTube, Telegram (optionnels) ;
-- X, Facebook/Instagram (Meta Content Library), TikTok Research : activés uniquement avec un accès chercheur officiel.
+**100 % local, gratuit, tout dans Docker.** Aucune API payante, aucun service cloud :
+le « cerveau » est **Qwen3 14B** (Ollama, sur votre GPU) qui pilote la collecte.
 
-## Démarrage rapide (Ubuntu Server + GPU)
+## Ce que fait le cerveau (Qwen 14B)
+
+| Étape | Rôle du LLM local |
+|---|---|
+| 1. discover | propose des requêtes, hashtags, subreddits et chaînes pour chaque domaine de `config/domains.yaml` |
+| 2. expand | lit la bio et les posts récents de chaque compte candidat et ne garde que les vrais individus actifs dans le domaine. Ces comptes sont ensuite rétro-collectés depuis le 01/01/2023, puis on fait un snowball (follows, mentions) sur 1 à 2 sauts |
+| 3. threads | — (récupération des arbres de conversation complets) |
+| 4. label | annote chaque post : domaine (ouvert, `new_domain`), pertinence, sujet, intention, stance, entités |
+
+## Plateformes
+
+| Plateforme | Accès (gratuit) | Statut |
+|---|---|---|
+| **Bluesky** | API publique AppView. Avec `BSKY_APP_PASSWORD` (gratuit), la recherche plein texte de posts est en plus activée | ✅ principale (testé) |
+| **Mastodon** | API publique. Respecte `indexable`, `discoverable` et `#nobot` | ✅ (testé) |
+| Telegram | pages publiques `t.me/s/<canal>` (sans compte), robots.txt respecté | ✅ optionnel |
+| Reddit | API officielle OAuth gratuite plus dumps `.zst` pour 2023-2024 | ✅ si clés ou dumps |
+| YouTube | clé API gratuite (10 000 unités par jour) | ✅ si clé |
+| X, Facebook/Instagram, TikTok | **accès chercheur officiel uniquement** (pas de scraping avec connexion ni de contournement anti-bot) | ⏸ auto-désactivé |
+
+## Démarrage (Ubuntu + GPU NVIDIA)
 
 ```bash
-# 1. Installer Docker (+ GPU) et récupérer le dépôt
 curl -fsSL https://raw.githubusercontent.com/hajerchlif/Context_SocialMedia/main/scripts/deploy_ubuntu.sh | bash
-#    (options : WITH_GPU=0 pour ignorer le GPU, WITH_LLM=1 pour démarrer Qwen 14B)
-
-# 2. Ajouter vos clés
-nano ~/Context_SocialMedia/.env
-nano ~/Context_SocialMedia/config/seeds/*.csv     # domaines et comptes de départ
-
-# 3. Générer le code du collecteur avec Claude Code (une seule fois)
-cd ~/Context_SocialMedia && claude                # puis lui donner PROMPT_Collecteur_Multiplateforme.md
-
-# 4. Lancer
-docker compose up -d --build
-docker compose logs -f collector
 ```
 
-## Commandes utiles
+Le script fait quatre choses :
+- il installe Docker et le NVIDIA Container Toolkit ;
+- il clone le dépôt ;
+- il crée `.env` avec des secrets aléatoires ;
+- il lance `docker compose up -d --build`, ce qui démarre PostgreSQL, Ollama, le téléchargement de `qwen3:14b` (~9 Go) et le collecteur.
 
-| Action | Commande |
-|---|---|
-| État des services | `docker compose ps` |
-| Logs | `docker compose logs -f collector` |
-| Export Parquet | `docker compose --profile tools run --rm export` |
-| LLM local (analyse) | `docker compose --profile llm up -d ollama && docker compose exec ollama ollama pull qwen3:14b` |
-| Arrêter | `docker compose down` (les données restent dans le volume `pgdata`) |
+Il faut ensuite éditer `config/domains.yaml` (vos domaines) et `config/seeds/*.csv` (comptes, hashtags et subreddits de départ, facultatif car Qwen en propose). Pour une recherche Bluesky optimale, mettez aussi `BSKY_HANDLE` et `BSKY_APP_PASSWORD` dans `.env`.
 
-## Matériel
-- **Collecte :** processeur et réseau seulement. Pas besoin de GPU ni de LLM.
-- **GPU 16 Go :** sert à l'analyse (Qwen 14B quantifié en 4 bits, environ 9–10 Go de VRAM ; embeddings) et au filtre de pertinence optionnel (`ENABLE_LLM_RELEVANCE`).
+## Commandes (toutes dans Docker)
 
-## Règles de collecte
-- Accès officiels uniquement. Pas de connexion à un compte pour scraper, pas de contournement de CAPTCHA ou d'anti-robot.
-- `robots.txt` et limites de débit respectés.
-- Pseudonymisation dès l'ingestion (HMAC). Aucun identifiant réel dans les exports.
-- Voir `DATA_RETENTION.md` (généré) et l'avis éthique ou le DPO de l'université.
+```bash
+docker compose logs -f collector                                   # suivre la collecte
+docker compose run --rm collector python -m collector propose      # Qwen propose des requêtes
+docker compose run --rm collector python -m collector seeds        # voir les seeds (manuels + LLM)
+docker compose run --rm collector python -m collector run --all -p bluesky   # un cycle, Bluesky seul
+docker compose run --rm collector python -m collector stats
+docker compose run --rm collector python -m collector reddit-archives        # ingérer data/reddit_dumps/*.zst
+docker compose --profile tools run --rm export                     # Parquet -> data/export/
+```
 
-## Contenu
-- `docker-compose.yml`, `Dockerfile`, `requirements.txt`, `.env.example` : déploiement.
-- `scripts/deploy_ubuntu.sh` : installation sur le serveur.
-- `scripts/push_to_github.sh` : envoi vers GitHub.
-- `config/seeds/*.csv` : comptes, flux et subreddits de départ par domaine (modèles à remplir).
-- `PROMPT_Collecteur_Multiplateforme.md` : spécification complète que Claude Code utilise pour écrire `collector/`.
+Par défaut, le collecteur fait un cycle complet toutes les 6 h (`run --all --loop 6`). `PILOT_MODE=true` limite chaque cycle à 60 comptes et ~2 000 fils. Mettez `false` pour la collecte complète.
+
+## Données et éthique
+
+- **Pseudonymisation dès l'ingestion** : HMAC-SHA256 (`HMAC_SECRET`) sur tous les identifiants. Les @mentions du texte sont réécrites en `@user_<uid>`.
+- **Tables exportées** : `posts` (Parquet partitionné plateforme/année/mois), `users`, `edges` (reply, mention, repost, quote, follow) et `llm_labels`.
+- **Jamais exportés** : `crawl_queue`, `seeds` et `reid_map`, qui contiennent les identifiants bruts nécessaires aux appels API.
+- **Comportement réseau** : rate-limits respectés (Retry-After, back-off), User-Agent avec contact, arrêt en cas de blocage et aucun contournement.
+- Ne jamais committer `.env`.
+
+## Développement
+
+```bash
+pip install -r requirements.txt && HMAC_SECRET=x pytest -q
+```

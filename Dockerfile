@@ -14,7 +14,7 @@ RUN pip install -r requirements.txt
 
 # Optional: Scrapling browsers (only if SCRAPLING_BROWSERS=1 at build time)
 ARG SCRAPLING_BROWSERS=0
-RUN if [ "$SCRAPLING_BROWSERS" = "1" ]; then scrapling install || true; fi
+RUN if [ "$SCRAPLING_BROWSERS" = "1" ]; then pip install "scrapling[fetchers]" && scrapling install || true; fi
 
 COPY . .
 
@@ -22,4 +22,5 @@ COPY . .
 RUN useradd -m collector && chown -R collector /app
 USER collector
 
-CMD ["python", "-m", "collector", "run", "--all"]
+ENV CONFIG_DIR=/app/config DATA_DIR=/app/data
+CMD ["python", "-m", "collector", "run", "--all", "--loop", "6"]

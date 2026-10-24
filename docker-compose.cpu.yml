@@ -1,0 +1,5 @@
+# Override for machines without an NVIDIA GPU (Qwen runs on CPU: much slower).
+# docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+services:
+  ollama:
+    deploy: !reset {}

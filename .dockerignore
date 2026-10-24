@@ -1,0 +1,7 @@
+.env
+data/
+.git/
+__pycache__/
+*.parquet
+*.zst
+.pytest_cache/

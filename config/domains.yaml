@@ -1,0 +1,21 @@
+# Domaines de départ (5-8 recommandés). Ils sont "ouverts" : le LLM peut proposer de nouveaux
+# domaines lors de l'annotation (champ new_domain). Qwen génère les requêtes/hashtags à partir d'ici.
+domains:
+  - name: climate_environment
+    description: climate change, energy transition, environment, ecology, sustainability
+    keywords: [climate, climatechange, renewables, ecology, climat, transition énergétique]
+  - name: ai_tech
+    description: artificial intelligence, machine learning, software, tech industry
+    keywords: [AI, LLM, machinelearning, opensource, IA, intelligence artificielle]
+  - name: health_wellbeing
+    description: health, medicine, mental health, fitness, nutrition
+    keywords: [health, mentalhealth, fitness, santé, longcovid]
+  - name: politics_society
+    description: politics, elections, public policy, social issues
+    keywords: [politics, election, policy, politique, société]
+  - name: sports
+    description: football, basketball, tennis, sports fans and events
+    keywords: [football, NBA, tennis, F1, foot, ligue1]
+  - name: culture_entertainment
+    description: movies, series, music, books, gaming
+    keywords: [movies, music, books, gaming, cinéma, série]

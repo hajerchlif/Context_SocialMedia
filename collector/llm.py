@@ -1,0 +1,137 @@
+"""Local LLM "brain" (Ollama, e.g. qwen3:14b on the GPU). No paid API, no cloud.
+
+Roles:
+  - propose_queries(domain)       -> search terms / hashtags / subreddits / channels to explore
+  - score_accounts(domain, list)  -> keep only accounts really active in the domain
+  - label_posts(list)             -> domain + relevance + context (topic, intent, stance, entities)
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+
+import httpx
+
+log = logging.getLogger(__name__)
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
+
+
+def parse_json(text: str):
+    """Robust JSON extraction from an LLM answer (strips <think>, code fences, trailing prose)."""
+    if text is None:
+        return None
+    t = _THINK_RE.sub("", text).strip()
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t, flags=re.M).strip()
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        pass
+    for open_c, close_c in (("{", "}"), ("[", "]")):
+        start, end = t.find(open_c), t.rfind(close_c)
+        if start != -1 and end > start:
+            try:
+                return json.loads(t[start:end + 1])
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+class LocalLLM:
+    def __init__(self, url: str, model: str, enabled: bool = True, timeout: float = 300):
+        self.url = url.rstrip("/")
+        self.model = model
+        self.enabled = enabled
+        self.http = httpx.Client(timeout=timeout)
+
+    def available(self) -> bool:
+        if not self.enabled:
+            return False
+        try:
+            r = self.http.get(f"{self.url}/api/tags", timeout=5)
+            names = [m.get("name", "") for m in r.json().get("models", [])]
+            ok = any(n == self.model or n.startswith(self.model.split(":")[0]) for n in names)
+            if not ok:
+                log.warning("Ollama up but model %s not pulled (have: %s)", self.model, names)
+            return ok
+        except Exception as e:  # noqa: BLE001
+            log.warning("Ollama not reachable at %s: %s", self.url, e)
+            return False
+
+    def ask_json(self, system: str, user: str, temperature: float = 0.2):
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "format": "json",
+            "stream": False,
+            "think": False,
+            "options": {"temperature": temperature, "num_ctx": 8192},
+        }
+        try:
+            r = self.http.post(f"{self.url}/api/chat", json=payload)
+            r.raise_for_status()
+            return parse_json(r.json().get("message", {}).get("content", ""))
+        except Exception as e:  # noqa: BLE001
+            log.warning("LLM call failed: %s", e)
+            return None
+
+    # ------------------------------------------------------------------ roles
+    def propose_queries(self, domain: str, description: str, keywords: list[str], platform: str, n: int = 15) -> list[str]:
+        kinds = {
+            "bluesky": "search phrases and hashtags (without #) used on Bluesky",
+            "mastodon": "hashtags (without #) actively used on Mastodon",
+            "reddit": "subreddit names (without r/)",
+            "telegram": "public Telegram channel usernames (without @), only real well-known public channels",
+            "youtube": "YouTube search queries",
+        }
+        sys = ("You help a PhD researcher build a social-media corpus (2023-2026) for context-aware user "
+               "interest modelling. Answer ONLY with JSON: {\"items\": [\"...\"]}. No explanations.")
+        usr = (f"Domain: {domain}\nDescription: {description}\nKnown keywords: {', '.join(keywords)}\n"
+               f"Give {n} {kinds.get(platform, 'search queries')} that would surface ordinary users "
+               f"discussing this domain in English or French. Mix generic and niche terms.")
+        out = self.ask_json(sys, usr, temperature=0.5)
+        items = out.get("items", []) if isinstance(out, dict) else (out if isinstance(out, list) else [])
+        clean = []
+        for it in items:
+            if isinstance(it, str):
+                s = it.strip().lstrip("#@").removeprefix("r/").strip()
+                if 1 < len(s) < 80 and s.lower() not in {c.lower() for c in clean}:
+                    clean.append(s)
+        return clean[:n]
+
+    def score_accounts(self, domain: str, description: str, accounts: list[dict]) -> dict[str, float]:
+        """accounts: [{"id": key, "bio": str, "sample": [post texts]}] -> {id: score 0..1}"""
+        if not accounts:
+            return {}
+        sys = ("You are a strict annotator. For each account decide how much it is a genuine individual "
+               "regularly posting about the domain (not a brand, not a bot, not spam). "
+               "Answer ONLY JSON: {\"scores\": {\"<id>\": <0..1>}}")
+        lines = []
+        for a in accounts:
+            sample = " | ".join((a.get("sample") or [])[:4])[:600]
+            lines.append(f"- id={a['id']} bio=\"{(a.get('bio') or '')[:200]}\" posts=\"{sample}\"")
+        usr = f"Domain: {domain} — {description}\nAccounts:\n" + "\n".join(lines)
+        out = self.ask_json(sys, usr)
+        scores = out.get("scores", {}) if isinstance(out, dict) else {}
+        res = {}
+        for k, v in scores.items():
+            try:
+                res[str(k)] = max(0.0, min(1.0, float(v)))
+            except (TypeError, ValueError):
+                continue
+        return res
+
+    def label_posts(self, domains: list[str], posts: list[dict]) -> dict[str, dict]:
+        """posts: [{"id", "text"}] -> {id: {domain, relevance, topic, intent, stance, entities}}"""
+        if not posts:
+            return {}
+        sys = ("Annotate social-media posts for context-aware interest modelling. For each post return: "
+               "domain (one of the given list, or 'other'), relevance 0..1 to that domain, topic (2-5 words), "
+               "intent (inform|opinion|question|share|promote|social|other), stance (positive|negative|neutral), "
+               "entities (list, max 5). Domains are open: if 'other', propose a short new domain name in 'new_domain'. "
+               "Answer ONLY JSON: {\"labels\": {\"<id>\": {...}}}")
+        body = "\n".join(f"- id={p['id']}: {p['text'][:500]!r}" for p in posts)
+        out = self.ask_json(sys, f"Domains: {', '.join(domains)}\nPosts:\n{body}")
+        labels = out.get("labels", {}) if isinstance(out, dict) else {}
+        return {str(k): v for k, v in labels.items() if isinstance(v, dict)}
