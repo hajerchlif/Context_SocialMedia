@@ -1,0 +1,72 @@
+# Context_SocialMedia — multi-platform social-media collector (2023–2026)
+# Usage:
+#   docker compose up -d --build                       # database + collector
+#   docker compose --profile llm up -d                 # + local LLM (Ollama, uses the GPU)
+#   docker compose --profile tools run --rm export     # Parquet export
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-socialmedia}
+      POSTGRES_USER: ${POSTGRES_USER:-collector}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-collector} -d ${POSTGRES_DB:-socialmedia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  collector:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-collector}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-socialmedia}
+      OLLAMA_URL: http://ollama:11434
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data          # Parquet exports, logs, caches
+    command: ${COLLECTOR_CMD:-python -m collector run --all}
+
+  export:
+    profiles: ["tools"]
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-collector}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-socialmedia}
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+    command: python -m collector export
+
+  # Optional local LLM (Qwen 14B, 4-bit, ~9–10 GB VRAM) — for the analysis
+  # phase (post context extraction, domain naming), not for collection.
+  ollama:
+    profiles: ["llm"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pgdata:
+  ollama:
