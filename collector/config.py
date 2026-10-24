@@ -77,6 +77,14 @@ class Settings:
     reddit_client_secret: str = field(default_factory=lambda: _env("REDDIT_CLIENT_SECRET"))
     reddit_archive_dir: str = field(default_factory=lambda: _env("REDDIT_ARCHIVE_DIR", "data/reddit_dumps"))
 
+    # Lemmy (fediverse, Reddit-like; public API, no key)
+    lemmy_instance: str = field(default_factory=lambda: _env("LEMMY_INSTANCE", "lemmy.world"))
+    enable_lemmy: bool = field(default_factory=lambda: _bool("ENABLE_LEMMY", True))
+
+    # Stack Exchange (free; 300 req/day without key, 10k/day with a free key)
+    stackexchange_key: str = field(default_factory=lambda: _env("STACKEXCHANGE_KEY"))
+    enable_stackexchange: bool = field(default_factory=lambda: _bool("ENABLE_STACKEXCHANGE", True))
+
     # YouTube (free API key, daily quota)
     youtube_api_key: str = field(default_factory=lambda: _env("YOUTUBE_API_KEY"))
 

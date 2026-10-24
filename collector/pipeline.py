@@ -17,14 +17,14 @@ from .config import Settings, load_domains, load_seeds
 from .connectors import ALL
 from .connectors.base import Connector
 from .db import DB
-from .http import Blocked
+from .http import Blocked, QuotaExhausted
 from .llm import LocalLLM
 from .pseudo import Pseudonymizer
 
 log = logging.getLogger(__name__)
 
 PLATFORM_KIND_FOR_LLM = {"bluesky": "query", "mastodon": "hashtag", "reddit": "subreddit",
-                         "telegram": "channel", "youtube": "query"}
+                         "telegram": "channel", "youtube": "query", "lemmy": "query", "stackexchange": "tag"}
 
 
 class Pipeline:
@@ -90,8 +90,12 @@ class Pipeline:
                 log.info("[%s] %s: LLM proposed %s", c.platform, d.name, items)
 
     def discover(self, platforms: list[str] | None = None) -> None:
-        if self.llm_ok and not any(s["origin"] == "llm" for s in self.db.seeds()):
-            self.propose(platforms)
+        if self.llm_ok:
+            have = {s["platform"] for s in self.db.seeds() if s["origin"] == "llm"}
+            todo = [c.platform for c in self.connectors(platforms)
+                    if c.platform in PLATFORM_KIND_FOR_LLM and c.platform not in have]
+            if todo:  # e.g. a newly added platform gets its own Qwen proposals
+                self.propose(todo)
         for c in self.connectors(platforms):
             run = self.db.run_start(c.platform, "discover")
             items = errors = 0
@@ -100,6 +104,9 @@ class Pipeline:
                     continue
                 try:
                     batch = c.search(seed["value"], seed["kind"], limit=100 if self.s.pilot_mode else 1000)
+                except QuotaExhausted as e:
+                    log.warning("[%s] %s — stopping this platform until the next cycle", c.platform, e)
+                    break
                 except Blocked as e:
                     log.warning("[%s] blocked on %r: %s", c.platform, seed["value"], e)
                     errors += 1
@@ -124,6 +131,8 @@ class Pipeline:
         for r in rows:
             try:
                 samples[r["raw_id"]] = c.sample(r["raw_id"])
+            except QuotaExhausted:
+                raise
             except Exception as e:  # noqa: BLE001
                 log.debug("sample failed %s: %s", r["raw_id"], e)
                 samples[r["raw_id"]] = {"bio": "", "sample": []}
@@ -171,7 +180,11 @@ class Pipeline:
                     else:
                         uniq[r["user_uid"]] = r
                 rows = list(uniq.values())
-                scores = self._relevant(c, rows)
+                try:
+                    scores = self._relevant(c, rows)
+                except QuotaExhausted as e:
+                    log.warning("[%s] %s — stopping this platform until the next cycle", c.platform, e)
+                    break
                 for r in rows:
                     sc = scores.get(r["raw_id"], 0)
                     if sc < threshold:
@@ -193,6 +206,10 @@ class Pipeline:
                         done += 1
                         log.info("[%s] hop%d user %s… score=%.2f -> %d posts", c.platform, r["hop"],
                                  r["user_uid"][:8], sc, len(tl.posts))
+                    except QuotaExhausted as e:
+                        log.warning("[%s] %s — stopping this platform until the next cycle", c.platform, e)
+                        done = self.users_per_run  # leave the user in the queue, exit the loop
+                        break
                     except Blocked as e:
                         log.warning("[%s] blocked: %s", c.platform, e)
                         self.db.mark_user(c.platform, r["raw_id"], "error")
@@ -211,7 +228,8 @@ class Pipeline:
                 continue
             run = self.db.run_start(c.platform, "threads")
             n = errors = 0
-            while n < limit:
+            quota_hit = False
+            while n < limit and not quota_hit:
                 roots = self.db.next_roots(c.platform, 50)
                 if not roots:
                     break
@@ -223,6 +241,10 @@ class Pipeline:
                         n += 1
                         if n % 100 == 0:
                             log.info("[%s] threads: %d", c.platform, n)
+                    except QuotaExhausted as e:
+                        log.warning("[%s] %s — threads resume next cycle", c.platform, e)
+                        quota_hit = True
+                        break
                     except Exception as e:  # noqa: BLE001
                         log.warning("[%s] thread %s failed: %s", c.platform, r["root_uid"][:8], e)
                         self.db.mark_root(c.platform, r["raw_root"], "error")

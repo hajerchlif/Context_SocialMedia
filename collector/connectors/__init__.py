@@ -1,4 +1,6 @@
 from .bluesky import BlueskyConnector
+from .lemmy import LemmyConnector
+from .stackexchange import StackExchangeConnector
 from .mastodon import MastodonConnector
 from .official import MetaConnector, TikTokConnector, XConnector
 from .reddit import RedditConnector
@@ -8,6 +10,8 @@ from .youtube import YouTubeConnector
 ALL = {
     "bluesky": BlueskyConnector,
     "mastodon": MastodonConnector,
+    "lemmy": LemmyConnector,
+    "stackexchange": StackExchangeConnector,
     "reddit": RedditConnector,
     "telegram": TelegramWebConnector,
     "youtube": YouTubeConnector,

@@ -17,6 +17,10 @@ class Blocked(Exception):
     """Raised when a site blocks us (CAPTCHA, login wall, persistent 403/429). We stop, never bypass."""
 
 
+class QuotaExhausted(Blocked):
+    """Daily API quota used up: stop this platform for the current cycle (nothing is marked as failed)."""
+
+
 class PoliteClient:
     def __init__(self, user_agent: str, rps: float = 2.0, timeout: float = 30.0, respect_robots: bool = False):
         self.client = httpx.Client(headers={"User-Agent": user_agent}, timeout=timeout, follow_redirects=True)

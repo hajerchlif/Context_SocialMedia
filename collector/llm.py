@@ -84,6 +84,11 @@ class LocalLLM:
             "reddit": "subreddit names (without r/)",
             "telegram": "usernames (without @) of REAL, existing, well-known public Telegram channels (news outlets, organisations). Only names you are certain exist; return fewer rather than inventing",
             "youtube": "YouTube search queries",
+            "lemmy": "short search queries (2-4 words) that would match post titles on Lemmy, the fediverse Reddit alternative",
+            "stackexchange": ("Stack Exchange 'site:tag' pairs, using ONLY these sites: stackoverflow, ai, datascience, "
+                              "sustainability, earthscience, health, fitness, medicalsciences, politics, law, sports, "
+                              "outdoors, movies, music, scifi, gaming, literature, cooking, travel, economics, history. "
+                              "Tags are lowercase with hyphens (e.g. politics:elections, ai:large-language-models)"),
         }
         sys = ("You help a PhD researcher build a social-media corpus (2023-2026) for context-aware user "
                "interest modelling. Answer ONLY with JSON: {\"items\": [\"...\"]}. No explanations.")

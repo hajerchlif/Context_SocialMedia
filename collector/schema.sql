@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS users (
     first_seen_at       TIMESTAMPTZ DEFAULT now()
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS interest_tags TEXT[];
+
 CREATE TABLE IF NOT EXISTS posts (
     post_uid         TEXT PRIMARY KEY,
     platform         TEXT NOT NULL,

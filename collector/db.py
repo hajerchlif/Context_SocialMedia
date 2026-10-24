@@ -24,17 +24,18 @@ class DB:
             if b.users:
                 cur.executemany(
                     """INSERT INTO users (user_uid, platform, bio, account_created_at, followers_count,
-                                          following_count, posts_count, is_bot_flag, domain_hint, hop)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                          following_count, posts_count, is_bot_flag, domain_hint, hop, interest_tags)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT (user_uid) DO UPDATE SET
                          bio = COALESCE(EXCLUDED.bio, users.bio),
                          followers_count = COALESCE(EXCLUDED.followers_count, users.followers_count),
                          following_count = COALESCE(EXCLUDED.following_count, users.following_count),
                          posts_count = COALESCE(EXCLUDED.posts_count, users.posts_count),
+                         interest_tags = COALESCE(EXCLUDED.interest_tags, users.interest_tags),
                          domain_hint = COALESCE(users.domain_hint, EXCLUDED.domain_hint),
                          hop = LEAST(COALESCE(users.hop, 9), COALESCE(EXCLUDED.hop, 9))""",
                     [(u.user_uid, u.platform, u.bio, u.account_created_at, u.followers_count, u.following_count,
-                      u.posts_count, u.is_bot_flag, domain, hop) for u in b.users],
+                      u.posts_count, u.is_bot_flag, domain, hop, u.interest_tags) for u in b.users],
                 )
             if b.posts:
                 cur.executemany(
