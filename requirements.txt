@@ -1,0 +1,21 @@
+# Core
+atproto            # Bluesky (AT Protocol) SDK
+websockets         # Bluesky Jetstream stream
+praw               # Reddit official API
+Mastodon.py        # Mastodon API
+google-api-python-client  # YouTube Data API (optional)
+telethon           # Telegram public channels (optional)
+httpx
+tenacity           # retries / backoff
+psycopg[binary]
+asyncpg
+SQLAlchemy
+pyyaml
+python-dotenv
+pandas
+pyarrow
+zstandard          # Reddit archive dumps (.zst)
+datasketch         # MinHash dedup
+lingua-language-detector
+scrapling          # optional link enrichment (public pages only)
+pytest
