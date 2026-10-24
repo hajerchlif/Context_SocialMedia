@@ -15,6 +15,7 @@ class UserRec:
     following_count: int | None = None
     posts_count: int | None = None
     is_bot_flag: bool | None = None
+    interest_tags: list[str] | None = None   # declared interests (e.g. Stack Exchange top tags)
 
 
 @dataclass

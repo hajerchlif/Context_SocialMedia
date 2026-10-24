@@ -8,7 +8,7 @@
 :root{
   --bg:#f6f7f9; --card:#fff; --ink:#18202b; --muted:#667085; --line:#e4e7ec; --accent:#3b5bdb;
   --ok:#12b76a; --warn:#f79009; --bad:#f04438; --soft:#eef2ff;
-  --bluesky:#1185fe; --mastodon:#6364ff; --telegram:#22a6d8; --reddit:#ff5a1f; --youtube:#d92d20;
+  --bluesky:#1185fe; --mastodon:#6364ff; --telegram:#22a6d8; --reddit:#ff5a1f; --youtube:#d92d20; --lemmy:#00bc8c; --stackexchange:#f48024;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -132,7 +132,7 @@ svg text{fill:var(--muted);font-size:10px}
   </section>
 </main>
 <script>
-const PC = {bluesky:'var(--bluesky)',mastodon:'var(--mastodon)',telegram:'var(--telegram)',reddit:'var(--reddit)',youtube:'var(--youtube)'};
+const PC = {bluesky:'var(--bluesky)',mastodon:'var(--mastodon)',telegram:'var(--telegram)',reddit:'var(--reddit)',youtube:'var(--youtube)',lemmy:'var(--lemmy)',stackexchange:'var(--stackexchange)'};
 const col = p => PC[p] || 'var(--accent)';
 const fmt = n => (n ?? 0).toLocaleString('fr-FR');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

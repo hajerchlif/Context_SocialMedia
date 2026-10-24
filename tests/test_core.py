@@ -114,3 +114,37 @@ def test_llm_roles_with_fake_ollama(monkeypatch):
     assert llm.propose_queries("climate", "d", ["k"], "mastodon") == ["climate", "energy"]
     assert calls[0][0].endswith("/api/chat") and calls[0][1]["format"] == "json" and calls[0][1]["think"] is False
     assert llm.score_accounts("climate", "d", [{"id": "0"}, {"id": "1"}]) == {"0": 0.9, "1": 0.1}
+
+
+def test_lemmy_normalisation():
+    from collector.connectors.lemmy import LemmyConnector, acct_of
+    c = LemmyConnector(settings(), P)
+    creator = {"id": 1, "name": "ann", "actor_id": "https://lemmy.ml/u/ann", "bot_account": False}
+    post = {"post": {"id": 10, "name": "Heat waves", "body": "thoughts @bob@lemmy.world?", "ap_id": "https://lemmy.ml/post/10",
+                     "published": "2024-07-01T10:00:00Z", "url": None},
+            "creator": creator, "community": {"name": "climate", "actor_id": "https://lemmy.ml/c/climate"},
+            "counts": {"score": 5, "comments": 2}}
+    b = c.post_to_batch(post, "search")
+    p = b.posts[0]
+    assert acct_of(creator) == "ann@lemmy.ml" and p.community == "climate@lemmy.ml"
+    assert "bob" not in p.text and b.discovered_roots
+    cv = {"comment": {"id": 7, "ap_id": "https://x.y/comment/7", "path": "0.5.7", "content": "agree",
+                      "published": "2024-07-02T10:00:00Z"},
+          "creator": {"name": "cy", "actor_id": "https://x.y/u/cy"}, "post": post["post"]}
+    cb = c.comment_to_batch(cv, "thread", {5: ("https://lemmy.ml/comment/5", P.uid("lemmy", "https://lemmy.ml/u/ann"))})
+    assert cb.posts[0].parent_post_uid == P.uid("lemmy", "https://lemmy.ml/comment/5")
+    assert cb.edges[0].type == "reply" and cb.edges[0].dst_uid == p.author_uid
+
+
+def test_stackexchange_normalisation():
+    from collector.connectors.stackexchange import StackExchangeConnector
+    c = StackExchangeConnector(settings(), P)
+    q = {"question_id": 3, "title": "Why?", "body": "<p>Because &amp; so</p>", "tags": ["Voting"],
+         "creation_date": 1700000000, "answer_count": 1, "owner": {"account_id": 42, "user_id": 9}}
+    b = c._question(q, "politics", "search")
+    assert b.posts[0].text == "Why?\n\nBecause & so" and b.posts[0].hashtags == ["voting"]
+    assert b.posts[0].author_uid == P.uid("stackexchange", "acct:42") and b.discovered_users[0][0] == "politics|9"
+    a = {"answer_id": 4, "body": "<p>ok</p>", "creation_date": 1700000100, "owner": {"account_id": 43, "user_id": 8}}
+    ab = c._answer(a, "politics", b.posts[0].post_uid, b.posts[0].author_uid, "thread")
+    assert ab.posts[0].parent_post_uid == b.posts[0].post_uid and ab.edges[0].type == "reply"
+    assert c._site_tag("politics:elections", "tag") == [("politics", "elections")]

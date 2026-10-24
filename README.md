@@ -21,6 +21,8 @@ le « cerveau » est **Qwen3 14B** (Ollama, sur votre GPU) qui pilote la collect
 |---|---|---|
 | **Bluesky** | API publique AppView. Avec `BSKY_APP_PASSWORD` (gratuit), la recherche plein texte de posts est en plus activée | ✅ principale (testé) |
 | **Mastodon** | API publique. Respecte `indexable`, `discoverable` et `#nobot` | ✅ (testé) |
+| **Lemmy** (alternative à Reddit) | API publique, sans clé | ✅ (testé) |
+| **Stack Exchange** (170 sites Q&R) | API gratuite : 300 requêtes/jour sans clé, 10 000 avec une clé gratuite (`STACKEXCHANGE_KEY`). Les tags de chaque utilisateur sont stockés dans `users.interest_tags` | ✅ (testé) |
 | Telegram | pages publiques `t.me/s/<canal>` (sans compte), robots.txt respecté | ✅ optionnel |
 | Reddit | API officielle OAuth gratuite plus dumps `.zst` pour 2023-2024 | ✅ si clés ou dumps |
 | YouTube | clé API gratuite (10 000 unités par jour) | ✅ si clé |
