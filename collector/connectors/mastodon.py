@@ -118,6 +118,49 @@ class MastodonConnector(Connector):
         return b
 
     # ------------------------------------------------------------------- API
+    @staticmethod
+    def snowflake(ts) -> str:
+        """Mastodon status ids are time-based: (unix_ms << 16). Lets us jump to any date."""
+        return str(int(ts.timestamp() * 1000) << 16)
+
+    def supports_window(self, kind: str) -> bool:
+        return kind == "hashtag"
+
+    def search_window(self, query: str, kind: str, since, until, limit: int) -> Batch:
+        """Tag timeline restricted to [since, until), spread over 3 sub-windows so posts are not all
+        from the last days of the month. Only posts we keep (indexable accounts) count towards limit."""
+        b = Batch()
+        tag = query.lstrip("#").replace(" ", "")
+        step = (until - since) / 3
+        subs = [(since + step * i, since + step * (i + 1)) for i in range(3)]
+        per_sub = max(1, limit // (3 * max(1, len(self.instances))))
+        for inst in self.instances:
+            for s_from, s_to in subs:
+                max_id, n, pages = self.snowflake(s_to), 0, 0
+                while n < per_sub and pages < 8:
+                    data = self._get(inst, f"/api/v1/timelines/tag/{tag}", {"limit": 40, "max_id": max_id})
+                    pages += 1
+                    if not data:
+                        break
+                    stop = False
+                    for st in data:
+                        ts = parse_ts(st.get("created_at"))
+                        if ts and ts < s_from:
+                            stop = True
+                            break
+                        sb = self.status_to_batch(st, inst, "search")
+                        if sb.posts:
+                            acct = (st.get("reblog") or st)["account"]
+                            sb.discovered_users.append((f"{inst}|{acct['id']}", sb.posts[0].author_uid))
+                            b.extend(sb)
+                            n += 1
+                            if n >= per_sub:
+                                break
+                    max_id = data[-1]["id"]
+                    if stop:
+                        break
+        return b
+
     def search(self, query: str, kind: str, limit: int = 200) -> Batch:
         b = Batch()
         if kind == "account":

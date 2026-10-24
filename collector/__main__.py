@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-p", "--platform", action="append", help="limit to platform(s)")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--loop", type=float, default=0, help="repeat every N hours")
+    ap.add_argument("--per-month", type=int, default=0, help="export: also write a time-balanced sample (N posts per platform-month)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
@@ -82,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
             logging.info("reddit archives: %d items", total)
     elif cmd == "export":
         from .export import export_all
-        print(export_all(pl.db, DATA_DIR / "export"))
+        print(export_all(pl.db, DATA_DIR / "export", per_month=a.per_month, date_from=settings.date_from))
     elif cmd == "stats":
         for row in pl.db.stats():
             print(row)

@@ -131,13 +131,20 @@ class StackExchangeConnector(Connector):
             return [(q, None)]
         return [("stackoverflow", q.replace(" ", "-"))]
 
-    def search(self, query: str, kind: str, limit: int = 200) -> Batch:
+    def supports_window(self, kind: str) -> bool:
+        return True
+
+    def search_window(self, query: str, kind: str, since, until, limit: int) -> Batch:
+        return self.search(query, kind, limit, since, until)
+
+    def search(self, query: str, kind: str, limit: int = 200, since=None, until=None) -> Batch:
+        since, until = since or self.s.date_from, until or self.s.date_to
         b = Batch()
         for site, tag in self._site_tag(query, kind):
             page, n = 1, 0
             while n < limit:
-                params = {"site": site, "pagesize": 100, "page": page, "sort": "votes", "order": "desc",
-                          "fromdate": int(self.s.date_from.timestamp()), "todate": int(self.s.date_to.timestamp())}
+                params = {"site": site, "pagesize": min(100, limit), "page": page, "sort": "votes", "order": "desc",
+                          "fromdate": int(since.timestamp()), "todate": int(until.timestamp())}
                 if kind == "query":
                     params["q"] = query.split(":", 1)[-1]
                     data = self._get("search/advanced", params)

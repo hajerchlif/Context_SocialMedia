@@ -18,6 +18,7 @@ from .connectors import ALL
 from .connectors.base import Connector
 from .db import DB
 from .http import Blocked, QuotaExhausted
+from .balance import cap_batch, month_windows, root_months
 from .llm import LocalLLM
 from .pseudo import Pseudonymizer
 
@@ -59,7 +60,7 @@ class Pipeline:
 
     def _save(self, c: Connector, batch, domain=None, hop=0):
         stats = self.db.save(batch, domain, hop)
-        self.db.enqueue_roots(c.platform, batch.discovered_roots)
+        self.db.enqueue_roots(c.platform, batch.discovered_roots, root_months(batch))
         if self.s.keep_reid_table:
             for raw, uid in batch.discovered_users:
                 self.db.reid(uid, c.platform, raw)
@@ -71,7 +72,21 @@ class Pipeline:
 
     @property
     def posts_per_user(self) -> int:
-        return 400 if self.s.pilot_mode else 5000
+        """How many posts we may scan per user (newest first) to reach DATE_FROM."""
+        if self.s.max_scan_per_user:
+            return self.s.max_scan_per_user
+        return 2000 if self.s.pilot_mode else 20000
+
+    @property
+    def per_month_seed(self) -> int:
+        """Discovery budget per seed and per month."""
+        if self.s.discovery_posts_per_month:
+            return self.s.discovery_posts_per_month
+        return 10 if self.s.pilot_mode else 50
+
+    @property
+    def months(self):
+        return month_windows(self.s.date_from, self.s.date_to)
 
     # ---------------------------------------------------------- 1. discover
     def propose(self, platforms: list[str] | None = None, n: int = 15) -> None:
@@ -99,30 +114,62 @@ class Pipeline:
         for c in self.connectors(platforms):
             run = self.db.run_start(c.platform, "discover")
             items = errors = 0
+            quota_hit = False
             for seed in self.db.seeds(c.platform):
+                if quota_hit:
+                    break
                 if seed["kind"] not in c.query_kinds:
                     continue
-                try:
-                    batch = c.search(seed["value"], seed["kind"], limit=100 if self.s.pilot_mode else 1000)
-                except QuotaExhausted as e:
-                    log.warning("[%s] %s — stopping this platform until the next cycle", c.platform, e)
-                    break
-                except Blocked as e:
-                    log.warning("[%s] blocked on %r: %s", c.platform, seed["value"], e)
-                    errors += 1
-                    continue
-                except Exception as e:  # noqa: BLE001
-                    log.exception("[%s] search %r failed: %s", c.platform, seed["value"], e)
-                    errors += 1
-                    continue
-                self._save(c, batch, seed["domain"], 0)
-                users = [(r, u) for r, u in dict(batch.discovered_users).items()]
-                self.db.enqueue_users(c.platform, users, seed["domain"], 0,
-                                      priority=2.0 if seed["kind"] == "account" else 1.0)
-                items += len(batch.posts) + len(users)
-                log.info("[%s] %s %r -> %d posts, %d accounts", c.platform, seed["kind"], seed["value"],
-                         len(batch.posts), len(users))
+                for window, batch in self._discover_seed(c, seed):
+                    if batch is None:  # quota
+                        quota_hit = True
+                        break
+                    if batch is False:  # error already logged
+                        errors += 1
+                        continue
+                    self._save(c, batch, seed["domain"], 0)
+                    users = [(r, u) for r, u in dict(batch.discovered_users).items()]
+                    self.db.enqueue_users(c.platform, users, seed["domain"], 0,
+                                          priority=2.0 if seed["kind"] == "account" else 1.0)
+                    items += len(batch.posts) + len(users)
+                    if window:
+                        self.db.mark_discover_month(c.platform, seed["kind"], seed["value"], window, len(batch.posts))
+                    log.info("[%s] %s %r %s-> %d posts, %d accounts", c.platform, seed["kind"], seed["value"],
+                             f"[{window}] " if window else "", len(batch.posts), len(users))
             self.db.run_end(run, items, errors)
+
+    def _discover_seed(self, c: Connector, seed: dict):
+        """Yield (month or None, batch). Same budget for every month: native date windows when the
+        platform supports them, otherwise one deep search capped per month. batch=None -> quota."""
+        kind, value = seed["kind"], seed["value"]
+
+        def call(fn, *args):
+            try:
+                return fn(*args)
+            except QuotaExhausted as e:
+                log.warning("[%s] %s — stopping this platform until the next cycle", c.platform, e)
+                return None
+            except Blocked as e:
+                log.warning("[%s] blocked on %r: %s", c.platform, value, e)
+                return False
+            except Exception as e:  # noqa: BLE001
+                log.exception("[%s] search %r failed: %s", c.platform, value, e)
+                return False
+
+        if c.supports_window(kind):
+            done = self.db.discover_months_done(c.platform, kind, value)
+            current = self.months[-1][0]
+            for month, since, until in self.months:
+                if month in done and month != current:  # past months are fetched once; current refreshed
+                    continue
+                b = call(c.search_window, value, kind, since, until, self.per_month_seed)
+                yield month, b
+                if b is None:
+                    return
+        else:
+            budget = self.per_month_seed * len(self.months)
+            b = call(c.search, value, kind, budget)
+            yield None, (cap_batch(b, self.per_month_seed) if b else b)
 
     # ------------------------------------------------------------ 2. expand
     def _relevant(self, c: Connector, rows: list[dict]) -> dict[str, float]:
@@ -192,6 +239,8 @@ class Pipeline:
                         continue
                     try:
                         tl = c.timeline(r["raw_id"], self.posts_per_user)
+                        n_raw = len(tl.posts)
+                        tl = cap_batch(tl, self.s.posts_per_user_month, by_author=True)
                         self._save(c, tl, r["domain"], r["hop"])
                         if r["hop"] < max_hop:
                             cap = self.s.max_users_per_domain_hop1 if r["hop"] == 0 else self.s.max_users_per_domain_hop2
@@ -204,8 +253,9 @@ class Pipeline:
                                 self.db.enqueue_users(c.platform, list(neigh.items()), r["domain"], r["hop"] + 1)
                         self.db.mark_user(c.platform, r["raw_id"], "done", r["user_uid"])
                         done += 1
-                        log.info("[%s] hop%d user %s… score=%.2f -> %d posts", c.platform, r["hop"],
-                                 r["user_uid"][:8], sc, len(tl.posts))
+                        log.info("[%s] hop%d user %s… score=%.2f -> %d posts kept (%d scanned, ≤%d/month)",
+                                 c.platform, r["hop"], r["user_uid"][:8], sc, len(tl.posts), n_raw,
+                                 self.s.posts_per_user_month)
                     except QuotaExhausted as e:
                         log.warning("[%s] %s — stopping this platform until the next cycle", c.platform, e)
                         done = self.users_per_run  # leave the user in the queue, exit the loop
@@ -230,7 +280,7 @@ class Pipeline:
             n = errors = 0
             quota_hit = False
             while n < limit and not quota_hit:
-                roots = self.db.next_roots(c.platform, 50)
+                roots = self.db.next_roots(c.platform, 50, self.months[0][0])
                 if not roots:
                     break
                 for r in roots:
@@ -261,10 +311,13 @@ class Pipeline:
         names = [d.name for d in self.domains]
         done = 0
         run = self.db.run_start("qwen", "label")
+        pool: list[dict] = []
         while done < max_posts:
-            rows = self.db.unlabeled_posts(10)
-            if not rows:
-                break
+            if not pool:  # balanced over platform x month, refreshed every 500 posts
+                pool = self.db.unlabeled_posts(500, self.s.date_from)
+                if not pool:
+                    break
+            rows, pool = pool[:10], pool[10:]
             batch = [{"id": str(i), "text": r["text"]} for i, r in enumerate(rows)]
             labels = self.llm.label_posts(names, batch)
             out = []
