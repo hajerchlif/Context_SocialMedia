@@ -2,6 +2,7 @@
 # Tout tourne dans Docker : PostgreSQL + Ollama (Qwen 14B sur le GPU = le "cerveau") + collecteur.
 #
 #   docker compose up -d --build                     # tout démarre (le modèle est téléchargé au 1er lancement)
+#   http://<ip-du-serveur>:8080                      # tableau de bord de l'avancement
 #   docker compose logs -f collector                 # suivre la collecte
 #   docker compose run --rm collector python -m collector stats
 #   docker compose --profile tools run --rm export   # export Parquet -> ./data/export
@@ -77,6 +78,19 @@ services:
       - ./config:/app/config:ro
       - ./data:/app/data          # Parquet exports, Reddit dumps
     command: ${COLLECTOR_CMD:-python -m collector run --all --loop 6}
+
+  # Web progress page: http://<server-ip>:8080  (aggregates only; set DASHBOARD_PASSWORD to protect it)
+  dashboard:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment: *collector-env
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
+    command: python -m collector dashboard
 
   export:
     profiles: ["tools"]

@@ -238,6 +238,7 @@ class Pipeline:
         max_posts = max_posts or (2000 if self.s.pilot_mode else 100_000)
         names = [d.name for d in self.domains]
         done = 0
+        run = self.db.run_start("qwen", "label")
         while done < max_posts:
             rows = self.db.unlabeled_posts(10)
             if not rows:
@@ -257,6 +258,7 @@ class Pipeline:
             done += len(rows)
             if done % 200 == 0:
                 log.info("labelled %d posts", done)
+        self.db.run_end(run, done, 0)
 
     # --------------------------------------------------------------- all
     def run_all(self, platforms: list[str] | None = None) -> None:

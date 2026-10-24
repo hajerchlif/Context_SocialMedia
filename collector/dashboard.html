@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi de collecte</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --ink:#18202b; --muted:#667085; --line:#e4e7ec; --accent:#3b5bdb;
+  --ok:#12b76a; --warn:#f79009; --bad:#f04438; --soft:#eef2ff;
+  --bluesky:#1185fe; --mastodon:#6364ff; --telegram:#22a6d8; --reddit:#ff5a1f; --youtube:#d92d20;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1218; --card:#171b23; --ink:#e7eaf0; --muted:#98a2b3; --line:#2a303b; --accent:#7c93ff; --soft:#1f2535;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2}
+h1{font-size:18px;margin:0;font-weight:650}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600}
+.status{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--muted)}
+.dot.live{background:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 25%,transparent);animation:p 2s infinite}
+@keyframes p{50%{box-shadow:0 0 0 7px transparent}}
+.badge{padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--accent);font-size:12px;font-weight:600}
+main{padding:20px 24px;max-width:1400px;margin:0 auto;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.c12{grid-column:span 12}.c8{grid-column:span 8}.c6{grid-column:span 6}.c4{grid-column:span 4}
+@media (max-width:1000px){.c8,.c6,.c4{grid-column:span 12}}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .l{color:var(--muted);font-size:12px}
+.kpi .d{color:var(--ok);font-size:12px;margin-top:2px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;font-size:12px}
+td.n,th.n{text-align:right}
+.tw{overflow-x:auto}
+#llm td{white-space:normal}
+@media (max-width:600px){header,main{padding-left:16px;padding-right:16px}header{position:static}.row{grid-template-columns:110px 1fr 70px}}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin:2px 4px 2px 0;background:var(--soft);color:var(--ink)}
+.pill b{color:var(--muted);font-weight:500;margin-left:4px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line)}
+.bar span{display:block;height:100%}
+.row{display:grid;grid-template-columns:140px 1fr 80px;gap:10px;align-items:center;margin:8px 0}
+.row .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .num{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:12px;margin-top:8px}
+.muted{color:var(--muted)}
+.run{color:var(--ok);font-weight:600}
+.err{color:var(--bad)}
+svg text{fill:var(--muted);font-size:10px}
+.empty{color:var(--muted);font-style:italic;padding:8px 0}
+.alert{grid-column:span 12;background:color-mix(in srgb,var(--bad) 12%,var(--card));border:1px solid var(--bad);border-radius:12px;padding:12px 16px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Collecte Context_SocialMedia</h1>
+  <div class="status">
+    <span id="live" class="dot"></span><span id="livetxt">…</span>
+    <span id="pilot" class="badge"></span>
+    <span>Mis à jour <span id="updated">—</span></span>
+  </div>
+</header>
+<main>
+  <div id="alert" class="alert" hidden></div>
+  <section class="c12 kpis" id="kpis"></section>
+
+  <section class="card c8">
+    <h2>Posts par mois (date de publication)</h2>
+    <div id="monthly"></div><div class="legend" id="mlegend"></div>
+  </section>
+  <section class="card c4">
+    <h2>Cerveau local (Qwen via Ollama)</h2>
+    <div id="llm"></div>
+  </section>
+
+  <section class="card c6">
+    <h2>Activité en cours et derniers jobs</h2>
+    <div class="tw"><table id="runs"></table></div>
+  </section>
+  <section class="card c6">
+    <h2>Par plateforme</h2>
+    <div class="tw"><table id="platforms"></table></div>
+  </section>
+
+  <section class="card c6">
+    <h2>File d'attente des comptes (snowball)</h2>
+    <div id="queue"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--ok)"></i>collectés</span>
+      <span><i class="sw" style="background:var(--accent)"></i>à traiter</span>
+      <span><i class="sw" style="background:var(--muted)"></i>rejetés par Qwen</span>
+      <span><i class="sw" style="background:var(--warn)"></i>doublons</span>
+      <span><i class="sw" style="background:var(--bad)"></i>erreurs</span>
+    </div>
+  </section>
+  <section class="card c6">
+    <h2>Fils de discussion</h2>
+    <div id="threads"></div>
+    <h2 style="margin-top:18px">Graphe d'interactions</h2>
+    <div id="edges"></div>
+  </section>
+
+  <section class="card c4">
+    <h2>Comptes par domaine</h2>
+    <div id="udom"></div>
+  </section>
+  <section class="card c4">
+    <h2>Annotation Qwen par domaine</h2>
+    <div id="ldom"></div>
+  </section>
+  <section class="card c4">
+    <h2>Nouveaux domaines découverts</h2>
+    <div id="newdom"></div>
+    <h2 style="margin-top:18px">Intentions</h2>
+    <div id="intents"></div>
+  </section>
+
+  <section class="card c6">
+    <h2>Sujets les plus fréquents (Qwen)</h2>
+    <div id="topics"></div>
+  </section>
+  <section class="card c6">
+    <h2>Requêtes proposées par Qwen</h2>
+    <div id="seeds"></div>
+  </section>
+</main>
+<script>
+const PC = {bluesky:'var(--bluesky)',mastodon:'var(--mastodon)',telegram:'var(--telegram)',reddit:'var(--reddit)',youtube:'var(--youtube)'};
+const col = p => PC[p] || 'var(--accent)';
+const fmt = n => (n ?? 0).toLocaleString('fr-FR');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const d = s => s ? new Date(s) : null;
+const day = s => s ? d(s).toLocaleDateString('fr-FR') : '—';
+const time = s => s ? d(s).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+const ago = s => { if(!s) return '—'; const m = Math.round((Date.now()-d(s))/60000);
+  return m < 1 ? "à l'instant" : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m/60)} h` : `il y a ${Math.round(m/1440)} j`; };
+const JOB = {discover:'découverte',expand:'collecte des comptes',threads:'fils',label:'annotation'};
+const $ = id => document.getElementById(id);
+const empty = t => `<div class="empty">${t}</div>`;
+
+function bars(rows, key, val, color, extra){
+  if(!rows || !rows.length) return empty('Pas encore de données');
+  const max = Math.max(...rows.map(r => r[val]));
+  return rows.map(r => `<div class="row"><span class="lab" title="${esc(r[key])}">${esc(r[key])}</span>
+    <div class="bar"><span style="width:${(100*r[val]/max).toFixed(1)}%;background:${color(r)}"></span></div>
+    <span class="num">${fmt(r[val])}${extra?extra(r):''}</span></div>`).join('');
+}
+
+function monthly(rows, dateFrom){
+  if(!rows.length){ $('monthly').innerHTML = empty('Pas encore de posts'); $('mlegend').innerHTML=''; return; }
+  const start = new Date((dateFrom||'2023-01-01').slice(0,7)+'-01'), now = new Date(), months=[];
+  for(let x=new Date(start); x<=now; x.setMonth(x.getMonth()+1)) months.push(x.toISOString().slice(0,7));
+  const plats = [...new Set(rows.map(r=>r.platform))];
+  const m = {}; rows.forEach(r => { (m[r.month] ||= {})[r.platform] = r.n; });
+  const tot = months.map(k => plats.reduce((s,p)=>s+((m[k]||{})[p]||0),0));
+  const max = Math.max(1,...tot), W = 900, H = 220, pad = 34, bw = (W-pad)/months.length;
+  let s = `<svg viewBox="0 0 ${W} ${H+24}" width="100%" role="img" aria-label="Posts par mois">`;
+  for(let i=0;i<=4;i++){ const y = H - (H-10)*i/4; s += `<line x1="${pad}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="0" y="${y+3}">${fmt(Math.round(max*i/4))}</text>`; }
+  months.forEach((k,i) => {
+    let y = H;
+    plats.forEach(p => { const v=(m[k]||{})[p]||0; if(!v) return; const h=(H-10)*v/max; y-=h;
+      s += `<rect x="${pad+i*bw+1}" y="${y}" width="${Math.max(1,bw-2)}" height="${h}" fill="${col(p)}"><title>${k} · ${p} : ${fmt(v)}</title></rect>`; });
+    if(k.endsWith('-01')||i===0) s += `<text x="${pad+i*bw}" y="${H+16}">${k.slice(0,4)}</text>`;
+  });
+  $('monthly').innerHTML = s + '</svg>';
+  $('mlegend').innerHTML = plats.map(p=>`<span><i class="sw" style="background:${col(p)}"></i>${p}</span>`).join('');
+}
+
+function render(j){
+  $('alert').hidden = !j.db_error;
+  if(j.db_error) $('alert').textContent = 'Base de données injoignable : ' + j.db_error;
+  const t = (j.totals||[])[0] || {};
+  const live = (t.last10m||0) > 0 || (t.labels1h||0) > 0;
+  $('live').className = 'dot' + (live ? ' live' : '');
+  $('livetxt').textContent = live ? `Collecte active · dernier post ${ago(t.last_post_at)}` : `En pause · dernier post ${ago(t.last_post_at)}`;
+  $('pilot').textContent = String(j.pilot).toLowerCase()==='true' ? 'Mode pilote' : 'Collecte complète';
+  $('updated').textContent = new Date().toLocaleTimeString('fr-FR');
+
+  const K = [['Posts',t.posts,`+${fmt(t.last1h)} en 1 h · +${fmt(t.last24h)} en 24 h`],['Utilisateurs',t.users],
+    ['Fils de discussion',t.threads],['Liens du graphe',t.edges],['Posts annotés par Qwen',t.labels,`+${fmt(t.labels1h)} en 1 h`]];
+  $('kpis').innerHTML = K.map(([l,v,dd])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${fmt(v)}</div>${dd?`<div class="d">${dd}</div>`:''}</div>`).join('');
+
+  monthly(j.monthly||[], j.date_from);
+
+  const o = j.ollama||{};
+  const loaded = (o.loaded||[]).map(m=>`${esc(m.name)} · ${m.vram_gb} Go VRAM`).join('<br>');
+  $('llm').innerHTML = `<table>
+    <tr><td>Serveur Ollama</td><td class="n">${o.up?'<span class="run">en ligne</span>':'<span class="err">hors ligne</span>'}</td></tr>
+    <tr><td>Modèle</td><td class="n">${esc(o.model)} ${(o.pulled||[]).some(n=>n.startsWith((o.model||'').split(':')[0]))?'✓':'<span class="err">non téléchargé</span>'}</td></tr>
+    <tr><td>Chargé sur le GPU</td><td class="n">${loaded || '<span class="muted">inactif (se charge à la demande)</span>'}</td></tr>
+    <tr><td>Annotations / heure</td><td class="n">${fmt(t.labels1h)}</td></tr>
+    <tr><td>Requêtes proposées</td><td class="n">${fmt((j.seeds||[]).filter(s=>s.origin==='llm').reduce((a,s)=>a+s.n,0))}</td></tr></table>`;
+
+  const runs = j.runs||[];
+  $('runs').innerHTML = runs.length ? `<tr><th>Job</th><th>Plateforme</th><th>Début</th><th>État</th><th class="n">Éléments</th><th class="n">Erreurs</th></tr>` +
+    runs.map(r=>`<tr><td>${JOB[r.job]||esc(r.job)}</td><td><i class="sw" style="background:${col(r.platform)}"></i>${esc(r.platform)}</td><td>${time(r.started_at)}</td>
+    <td>${r.ended_at?`<span class="muted">fini ${ago(r.ended_at)}</span>`:'<span class="run">● en cours</span>'}</td><td class="n">${r.ended_at?fmt(r.items):'…'}</td><td class="n ${r.errors?'err':''}">${fmt(r.errors)}</td></tr>`).join('')
+    : `<tr><td>${empty('Aucun job encore')}</td></tr>`;
+
+  const pl = j.platforms||[];
+  $('platforms').innerHTML = pl.length ? `<tr><th>Plateforme</th><th class="n">Posts</th><th class="n">Auteurs</th><th class="n">Fils</th><th>Période couverte</th></tr>` +
+    pl.map(p=>`<tr><td><i class="sw" style="background:${col(p.platform)}"></i>${esc(p.platform)}</td><td class="n">${fmt(p.posts)}</td><td class="n">${fmt(p.authors)}</td><td class="n">${fmt(p.threads)}</td><td>${day(p.first)} → ${day(p.last)}</td></tr>`).join('')
+    : `<tr><td>${empty('Pas encore de posts')}</td></tr>`;
+
+  const q = {}; (j.queue||[]).forEach(r => { const k = `${r.platform}|${r.hop}`; (q[k] ||= {platform:r.platform,hop:r.hop})[r.status] = r.n; });
+  const QC = [['done','var(--ok)'],['todo','var(--accent)'],['skipped','var(--muted)'],['duplicate','var(--warn)'],['error','var(--bad)']];
+  const qr = Object.values(q);
+  $('queue').innerHTML = qr.length ? qr.map(r => { const tot = QC.reduce((s,[k])=>s+(r[k]||0),0);
+    return `<div class="row"><span class="lab"><i class="sw" style="background:${col(r.platform)}"></i>${esc(r.platform)} · saut ${r.hop}</span>
+    <div class="bar">${QC.map(([k,c])=>r[k]?`<span title="${k} : ${fmt(r[k])}" style="width:${100*r[k]/tot}%;background:${c}"></span>`:'').join('')}</div>
+    <span class="num">${fmt(r.done||0)}/${fmt(tot)}</span></div>`; }).join('') : empty('File vide');
+
+  const tq = {}; (j.threads_queue||[]).forEach(r => { (tq[r.platform] ||= {platform:r.platform})[r.status] = r.n; });
+  const tr = Object.values(tq);
+  $('threads').innerHTML = tr.length ? tr.map(r => { const tot=(r.done||0)+(r.todo||0)+(r.error||0);
+    return `<div class="row"><span class="lab"><i class="sw" style="background:${col(r.platform)}"></i>${esc(r.platform)}</span>
+    <div class="bar"><span style="width:${100*(r.done||0)/Math.max(1,tot)}%;background:var(--ok)"></span><span style="width:${100*(r.error||0)/Math.max(1,tot)}%;background:var(--bad)"></span></div>
+    <span class="num">${fmt(r.done||0)}/${fmt(tot)}</span></div>`; }).join('') : empty('Aucun fil en attente');
+
+  $('edges').innerHTML = bars(j.edges, 'type', 'n', ()=>'var(--accent)');
+  $('udom').innerHTML = bars(j.users_by_domain, 'domain', 'n', ()=>'var(--accent)');
+  $('ldom').innerHTML = bars(j.labels_by_domain, 'domain', 'n', ()=>'var(--mastodon)', r=>` <span title="pertinence moyenne">· ${r.relevance??''}</span>`);
+  $('newdom').innerHTML = (j.new_domains||[]).length ? j.new_domains.map(r=>`<span class="pill">${esc(r.domain)}<b>${fmt(r.n)}</b></span>`).join('') : empty('Aucun pour l’instant');
+  $('intents').innerHTML = bars(j.intents, 'intent', 'n', ()=>'var(--ok)');
+  $('topics').innerHTML = (j.topics||[]).length ? j.topics.map(r=>`<span class="pill">${esc(r.topic)}<b>${fmt(r.n)}</b></span>`).join('') : empty('L’annotation n’a pas encore commencé');
+
+  const by = {}; (j.llm_seeds||[]).forEach(s => (by[s.platform] ||= []).push(s));
+  $('seeds').innerHTML = Object.keys(by).length ? Object.entries(by).map(([p,ss]) => `<div style="margin-bottom:10px"><div class="muted" style="margin-bottom:4px"><i class="sw" style="background:${col(p)}"></i>${esc(p)}</div>` +
+    ss.map(s=>`<span class="pill" title="${esc(s.domain)}">${s.kind==='hashtag'?'#':s.kind==='subreddit'?'r/':''}${esc(s.value)}</span>`).join('') + '</div>').join('')
+    : empty('Qwen n’a encore rien proposé');
+}
+
+async function tick(){
+  try { const r = await fetch('/api/stats', {cache:'no-store'}); render(await r.json()); }
+  catch(e){ $('livetxt').textContent = 'Tableau de bord déconnecté…'; $('live').className = 'dot'; }
+}
+tick(); setInterval(tick, 10000);
+</script>
+</body>
+</html>

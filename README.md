@@ -40,6 +40,12 @@ Le script fait quatre choses :
 
 Il faut ensuite éditer `config/domains.yaml` (vos domaines) et `config/seeds/*.csv` (comptes, hashtags et subreddits de départ, facultatif car Qwen en propose). Pour une recherche Bluesky optimale, mettez aussi `BSKY_HANDLE` et `BSKY_APP_PASSWORD` dans `.env`.
 
+## Tableau de bord
+
+Ouvrez **http://<ip-du-serveur>:8080** (ex. `http://192.168.1.71:8080`) depuis n'importe quel appareil du réseau local.
+Il affiche : posts, comptes, fils et graphe, posts par mois depuis 2023, jobs en cours, file d'attente du snowball, état de Qwen sur le GPU, domaines, sujets et requêtes proposées par Qwen. Il se rafraîchit toutes les 10 s.
+Il ne montre que des chiffres agrégés, sans texte de post ni identifiant. Pour le protéger, ajoutez `DASHBOARD_PASSWORD=...` dans `.env` (utilisateur : `admin`).
+
 ## Commandes (toutes dans Docker)
 
 ```bash
