@@ -11,6 +11,7 @@
   reddit-archives             ingest .zst dumps from REDDIT_ARCHIVE_DIR
   export                      Parquet export to data/export
   stats                       counts per platform
+  dashboard                   web progress page on :8080
 """
 from __future__ import annotations
 
@@ -34,9 +35,14 @@ def main(argv: list[str] | None = None) -> int:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
+    cmd = a.command
+    if cmd == "dashboard":
+        from .dashboard import serve
+        serve()
+        return 0
+
     from .pipeline import Pipeline
 
-    cmd = a.command
     if cmd in {"init-db"}:
         settings.validate()
         from .db import DB
