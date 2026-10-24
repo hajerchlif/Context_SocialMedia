@@ -115,8 +115,19 @@ class TelegramWebConnector(Connector):
     def search(self, query: str, kind: str, limit: int = 200) -> Batch:
         b = Batch()
         ch = query.strip().lstrip("@").replace("https://t.me/", "").strip("/")
-        if re.fullmatch(r"[A-Za-z0-9_]{4,64}", ch):
+        if not re.fullmatch(r"[A-Za-z0-9_]{4,64}", ch):
+            return b
+        # the LLM can invent channel names: keep only channels whose public page really has messages
+        try:
+            r = self.http.get(f"https://t.me/s/{ch}")
+        except Blocked:
+            return b
+        if r.status_code == 200 and "data-post=\"" in r.text:
+            page, _ = self.parse_page(r.text, ch)
+            b.users, b.posts = page.users, page.posts
             b.discovered_users.append((ch, self.uid(ch)))
+        else:
+            log.info("telegram channel %r does not exist or has no public page — ignored", ch)
         return b
 
     def resolve(self, kind: str, value: str) -> str | None:

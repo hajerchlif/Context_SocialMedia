@@ -80,9 +80,9 @@ class LocalLLM:
     def propose_queries(self, domain: str, description: str, keywords: list[str], platform: str, n: int = 15) -> list[str]:
         kinds = {
             "bluesky": "search phrases and hashtags (without #) used on Bluesky",
-            "mastodon": "hashtags (without #) actively used on Mastodon",
+            "mastodon": "real hashtags (without #) exactly as people type them on Mastodon (e.g. ClimateChange, LLM), no underscores, no invented tags",
             "reddit": "subreddit names (without r/)",
-            "telegram": "public Telegram channel usernames (without @), only real well-known public channels",
+            "telegram": "usernames (without @) of REAL, existing, well-known public Telegram channels (news outlets, organisations). Only names you are certain exist; return fewer rather than inventing",
             "youtube": "YouTube search queries",
         }
         sys = ("You help a PhD researcher build a social-media corpus (2023-2026) for context-aware user "

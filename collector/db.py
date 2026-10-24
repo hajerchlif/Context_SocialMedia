@@ -93,9 +93,13 @@ class DB:
             "SELECT * FROM thread_queue WHERE platform=%s AND status='todo' LIMIT %s", (platform, limit)
         ).fetchall()
 
-    def mark_user(self, platform: str, raw_id: str, status: str) -> None:
+    def mark_user(self, platform: str, raw_id: str, status: str, user_uid: str | None = None) -> None:
         self.conn.execute("UPDATE crawl_queue SET status=%s, updated_at=now() WHERE platform=%s AND raw_id=%s",
                           (status, platform, raw_id))
+        if user_uid and status in ("done", "skipped"):
+            # same person reached through another instance/raw id (e.g. Mastodon) -> don't collect twice
+            self.conn.execute("""UPDATE crawl_queue SET status='duplicate', updated_at=now()
+                                 WHERE platform=%s AND user_uid=%s AND status='todo'""", (platform, user_uid))
 
     def mark_root(self, platform: str, raw_root: str, status: str) -> None:
         self.conn.execute("UPDATE thread_queue SET status=%s WHERE platform=%s AND raw_root=%s",

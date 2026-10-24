@@ -164,11 +164,18 @@ class Pipeline:
                 rows = self.db.next_users(c.platform, 8, max_hop)
                 if not rows:
                     break
+                uniq = {}
+                for r in rows:
+                    if r["user_uid"] in uniq:
+                        self.db.mark_user(c.platform, r["raw_id"], "duplicate")
+                    else:
+                        uniq[r["user_uid"]] = r
+                rows = list(uniq.values())
                 scores = self._relevant(c, rows)
                 for r in rows:
                     sc = scores.get(r["raw_id"], 0)
                     if sc < threshold:
-                        self.db.mark_user(c.platform, r["raw_id"], "skipped")
+                        self.db.mark_user(c.platform, r["raw_id"], "skipped", r["user_uid"])
                         continue
                     try:
                         tl = c.timeline(r["raw_id"], self.posts_per_user)
@@ -182,7 +189,7 @@ class Pipeline:
                                 neigh.update(dict(tl.discovered_users))
                                 neigh.pop(r["raw_id"], None)
                                 self.db.enqueue_users(c.platform, list(neigh.items()), r["domain"], r["hop"] + 1)
-                        self.db.mark_user(c.platform, r["raw_id"], "done")
+                        self.db.mark_user(c.platform, r["raw_id"], "done", r["user_uid"])
                         done += 1
                         log.info("[%s] hop%d user %s… score=%.2f -> %d posts", c.platform, r["hop"],
                                  r["user_uid"][:8], sc, len(tl.posts))
@@ -214,6 +221,8 @@ class Pipeline:
                         self._save(c, tb)
                         self.db.mark_root(c.platform, r["raw_root"], "done")
                         n += 1
+                        if n % 100 == 0:
+                            log.info("[%s] threads: %d", c.platform, n)
                     except Exception as e:  # noqa: BLE001
                         log.warning("[%s] thread %s failed: %s", c.platform, r["root_uid"][:8], e)
                         self.db.mark_root(c.platform, r["raw_root"], "error")
