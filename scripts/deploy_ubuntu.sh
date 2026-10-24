@@ -6,8 +6,7 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/hajerchlif/Context_SocialMedia.git}"
 APP_DIR="${APP_DIR:-$HOME/Context_SocialMedia}"
-WITH_GPU="${WITH_GPU:-1}"      # 1 = install NVIDIA Container Toolkit (for the optional LLM)
-WITH_LLM="${WITH_LLM:-0}"      # 1 = also start Ollama and pull the Qwen model
+WITH_GPU="${WITH_GPU:-1}"      # 1 = install NVIDIA Container Toolkit (Qwen 14B runs on the GPU inside Docker)
 
 log(){ printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 
@@ -59,26 +58,20 @@ if [ ! -f .env ]; then
   echo "-> .env created with random secrets. Edit it now to add your API keys: nano $APP_DIR/.env"
 fi
 
-log "6/6 Start"
-if [ ! -d collector ]; then
-  echo "!! The collector code (folder 'collector/') is not in the repo yet."
-  echo "   Generate it with Claude Code in $APP_DIR using PROMPT_Collecteur_Multiplateforme.md,"
-  echo "   push it, then run:  cd $APP_DIR && docker compose up -d --build"
-  sudo docker compose up -d db
-else
-  sudo docker compose up -d --build
+log "6/6 Start everything in Docker (PostgreSQL + Ollama/Qwen + collector)"
+COMPOSE="sudo docker compose"
+if [ "$WITH_GPU" != "1" ] || ! command -v nvidia-smi >/dev/null 2>&1; then
+  COMPOSE="$COMPOSE -f docker-compose.yml -f docker-compose.cpu.yml"
+  echo "!! No GPU: Qwen will run on CPU (slow)."
 fi
-
-if [ "$WITH_LLM" = "1" ]; then
-  MODEL=$(grep -E '^OLLAMA_MODEL=' .env | cut -d= -f2); MODEL=${MODEL:-qwen3:14b}
-  sudo docker compose --profile llm up -d ollama
-  sleep 5
-  sudo docker compose exec ollama ollama pull "$MODEL"
-fi
+echo "First start downloads the model (~9 GB), this can take a while."
+$COMPOSE up -d --build
 
 log "Done."
 echo "Status:   cd $APP_DIR && docker compose ps"
 echo "Logs:     docker compose logs -f collector"
+echo "Stats:    docker compose run --rm collector python -m collector stats"
+echo "LLM seeds:docker compose run --rm collector python -m collector seeds"
 echo "Export:   docker compose --profile tools run --rm export"
 echo "GPU test: docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi"
 echo "(Log out and back in once so that 'docker' works without sudo.)"

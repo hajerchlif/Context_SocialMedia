@@ -1,8 +1,17 @@
-# Context_SocialMedia — multi-platform social-media collector (2023–2026)
-# Usage:
-#   docker compose up -d --build                       # database + collector
-#   docker compose --profile llm up -d                 # + local LLM (Ollama, uses the GPU)
-#   docker compose --profile tools run --rm export     # Parquet export
+# Context_SocialMedia — collecteur multi-plateforme 2023–2026, 100 % local et gratuit.
+# Tout tourne dans Docker : PostgreSQL + Ollama (Qwen 14B sur le GPU = le "cerveau") + collecteur.
+#
+#   docker compose up -d --build                     # tout démarre (le modèle est téléchargé au 1er lancement)
+#   docker compose logs -f collector                 # suivre la collecte
+#   docker compose run --rm collector python -m collector stats
+#   docker compose --profile tools run --rm export   # export Parquet -> ./data/export
+#   Sans GPU : docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+
+x-collector-env: &collector-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-collector}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-socialmedia}
+  OLLAMA_URL: http://ollama:11434
+  CONFIG_DIR: /app/config
+  DATA_DIR: /app/data
 
 services:
   db:
@@ -20,20 +29,54 @@ services:
       timeout: 5s
       retries: 10
 
+  # Local LLM server (Qwen3 14B Q4 ≈ 9–10 GB VRAM on a 16 GB GPU)
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # One-shot: downloads the model into the ollama volume (skipped instantly if already there)
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen3:14b}"]
+    restart: "no"
+
   collector:
     build: .
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-collector}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-socialmedia}
-      OLLAMA_URL: http://ollama:11434
+    environment: *collector-env
     volumes:
       - ./config:/app/config:ro
-      - ./data:/app/data          # Parquet exports, logs, caches
-    command: ${COLLECTOR_CMD:-python -m collector run --all}
+      - ./data:/app/data          # Parquet exports, Reddit dumps
+    command: ${COLLECTOR_CMD:-python -m collector run --all --loop 6}
 
   export:
     profiles: ["tools"]
@@ -42,30 +85,11 @@ services:
       db:
         condition: service_healthy
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-collector}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-socialmedia}
+    environment: *collector-env
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
     command: python -m collector export
-
-  # Optional local LLM (Qwen 14B, 4-bit, ~9–10 GB VRAM) — for the analysis
-  # phase (post context extraction, domain naming), not for collection.
-  ollama:
-    profiles: ["llm"]
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    volumes:
-      - ollama:/root/.ollama
-    ports:
-      - "127.0.0.1:11434:11434"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
 volumes:
   pgdata:

@@ -1,3 +1,4 @@
 domain,kind,value
-politique,account,exemple.bsky.social
-science_ia,feed,at://did:plc:XXXX/app.bsky.feed.generator/science
+ai_tech,hashtag,machinelearning
+climate_environment,query,climate change
+politics_society,account,exemple.bsky.social

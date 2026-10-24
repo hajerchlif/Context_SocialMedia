@@ -1,4 +1,4 @@
 domain,kind,value
-politique,subreddit,politics
-science_ia,subreddit,MachineLearning
-climat,subreddit,climatechange
+politics_society,subreddit,politics
+ai_tech,subreddit,MachineLearning
+climate_environment,subreddit,climatechange
