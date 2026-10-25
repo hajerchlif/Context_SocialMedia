@@ -173,3 +173,11 @@ def test_mastodon_snowflake():
     ts = dt.datetime(2023, 6, 1, tzinfo=dt.timezone.utc)
     sid = int(MastodonConnector.snowflake(ts))
     assert (sid >> 16) / 1000 == ts.timestamp()
+
+
+def test_stackexchange_title_unescaped():
+    from collector.connectors.stackexchange import StackExchangeConnector
+    c = StackExchangeConnector(settings(), P)
+    q = {"question_id": 1, "title": "Wijngaarden &amp; Happer&#39;s paper", "body": "<p>x</p>",
+         "creation_date": 1700000000, "owner": {"account_id": 1, "user_id": 1}}
+    assert c._question(q, "earthscience", "s").posts[0].text.startswith("Wijngaarden & Happer's paper")

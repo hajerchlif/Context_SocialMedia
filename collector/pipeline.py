@@ -323,6 +323,9 @@ class Pipeline:
             out = []
             for i, r in enumerate(rows):
                 lab = labels.get(str(i), {})
+                for k in ("topic", "domain", "intent", "stance", "new_domain"):  # Qwen sometimes returns lists
+                    if isinstance(lab.get(k), list):
+                        lab[k] = ", ".join(str(x) for x in lab[k])
                 try:
                     rel = float(lab.get("relevance", 0) or 0)
                 except (TypeError, ValueError):
