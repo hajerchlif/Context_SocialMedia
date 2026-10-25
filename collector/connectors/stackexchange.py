@@ -92,7 +92,8 @@ class StackExchangeConnector(Connector):
         b.users.append(UserRec(a_uid, self.platform))
         b.posts.append(PostRec(
             post_uid=p_uid, platform=self.platform, author_uid=a_uid,
-            text=self.p.rewrite_mentions(self.platform, f"{q.get('title', '')}\n\n{strip(q.get('body'))}".strip()),
+            text=self.p.rewrite_mentions(self.platform,
+                                         f"{html.unescape(q.get('title', ''))}\n\n{strip(q.get('body'))}".strip()),
             created_at=_ts(q.get("creation_date")), hashtags=[t.lower() for t in q.get("tags", [])],
             root_post_uid=p_uid, like_count=q.get("score"), reply_count=q.get("answer_count"),
             community=site, source_method=method,
