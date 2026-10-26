@@ -11,6 +11,7 @@
   reddit-archives             ingest .zst dumps from REDDIT_ARCHIVE_DIR
   datasets [-p x -p weibo]    Qwen finds, screens and imports public X/Weibo research datasets
   datasets-status             what was imported or rejected, and why
+  dataset-import -p weibo REF import one dataset you chose (hf:owner/name, zenodo:123 or its URL)
   telegram-login              one-time login for the Telegram API (needs TELEGRAM_API_ID/HASH)
   export                      Parquet export to data/export
   stats                       counts per platform
@@ -29,6 +30,7 @@ from .config import DATA_DIR, settings
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="collector")
     ap.add_argument("command")
+    ap.add_argument("ref", nargs="?", help="dataset-import: hf:owner/name, zenodo:123 or a URL")
     ap.add_argument("-p", "--platform", action="append", help="limit to platform(s)")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--loop", type=float, default=0, help="repeat every N hours")
@@ -91,6 +93,11 @@ def main(argv: list[str] | None = None) -> int:
             logging.info("reddit archives: %d items", total)
     elif cmd == "datasets":
         pl.datasets(plats)
+    elif cmd == "dataset-import":
+        if not a.ref or not plats or len(plats) != 1:
+            print("usage: python -m collector dataset-import -p weibo hf:owner/name")
+            return 1
+        pl.dataset_import(plats[0], a.ref)
     elif cmd == "datasets-status":
         for r in pl.db.datasets():
             print(f"{r['platform']:6} {r['status']:9} {r['source']:7} {r['dataset_id'][:55]:55} "

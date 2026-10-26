@@ -350,6 +350,11 @@ class Pipeline:
 
         DatasetImporter(self.s, self.db, self.llm, self.llm_ok, self.p, self.domains).run(platforms)
 
+    def dataset_import(self, platform: str, ref: str) -> None:
+        from .datasets import DatasetImporter
+
+        DatasetImporter(self.s, self.db, self.llm, self.llm_ok, self.p, self.domains).import_one(platform, ref)
+
     # --------------------------------------------------------------- all
     def run_all(self, platforms: list[str] | None = None) -> None:
         t0 = time.time()
