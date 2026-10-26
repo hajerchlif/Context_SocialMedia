@@ -236,3 +236,19 @@ def test_dataset_licence_aliases():
         assert licence_ok(ok), ok
     for bad in [None, "", "other", "unknown", "other-at"]:
         assert not licence_ok(bad), bad
+
+
+def test_cli_accepts_options_before_dataset_ref(monkeypatch):
+    import collector.__main__ as m
+    seen = {}
+
+    class FakePipeline:
+        def __init__(self, s):
+            pass
+
+        def dataset_import(self, platform, ref):
+            seen["args"] = (platform, ref)
+
+    monkeypatch.setattr("collector.pipeline.Pipeline", FakePipeline)
+    assert m.main(["dataset-import", "-p", "weibo", "hf:owner/name"]) == 0
+    assert seen["args"] == ("weibo", "hf:owner/name")
