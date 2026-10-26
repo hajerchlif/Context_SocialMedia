@@ -67,7 +67,8 @@ class PoliteClient:
                 log.warning("network error %s (%s), retry in %.1fs", url, e, sleep)
                 time.sleep(sleep)
                 continue
-            if r.status_code == 429 or r.status_code >= 500:
+            # 501 Not Implemented is a definitive answer (e.g. HF viewer cannot convert a dataset): no retry
+            if r.status_code == 429 or (r.status_code >= 500 and r.status_code != 501):
                 ra = r.headers.get("retry-after") or r.headers.get("ratelimit-reset")
                 sleep = _retry_after(ra) if ra else min(120, 2 ** attempt * 5) + random.random()
                 log.warning("HTTP %s on %s, sleeping %.0fs", r.status_code, host, sleep)

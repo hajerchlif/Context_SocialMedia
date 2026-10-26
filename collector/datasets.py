@@ -432,7 +432,7 @@ class DatasetImporter:
             for key, c in cands.items():
                 if imported >= max_imports:
                     break
-                if known.get(key) in {"imported", "rejected", "empty"}:
+                if known.get(key) in {"imported", "rejected", "empty", "error"}:  # error: retried only after a manual reset
                     continue
                 try:
                     ok, prov, j = self.screen(platform, c)
