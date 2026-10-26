@@ -51,6 +51,22 @@ LICENCE_OK = re.compile(r"^(cc0|cc-by|cc-by-sa|cc-by-nc|cc-by-nc-sa|cc-by-4\.0|c
                         r"cc-by-nc-sa-4\.0|cc-by-3\.0|cc-by-nc-3\.0|cc-by-nc-nd|cc-by-nd|mit|apache-2\.0|"
                         r"bsd.*|odc-by|odbl|pddl|openrail|unlicense|gpl.*|lgpl.*|afl-3\.0|ecl-2\.0|"
                         r"artistic-2\.0|wtfpl|cdla.*|c-uda|etalab.*)", re.I)
+# Zenodo / HF spell the same licences differently (cc-zero, odc-pddl, apache2.0, mit-license...)
+_LICENCE_ALIASES = {"cc-zero": "cc0", "cc0-1.0": "cc0", "odc-pddl": "pddl", "odc-odbl": "odbl", "odc-by-1.0": "odc-by",
+                    "apache2.0": "apache-2.0", "apache-license-2.0": "apache-2.0", "mit-license": "mit"}
+
+
+def normalise_licence(lic) -> str:
+    if isinstance(lic, list):
+        lic = lic[0] if lic else ""
+    low = str(lic or "").strip().lower().replace("_", "-")
+    return _LICENCE_ALIASES.get(low, low)
+
+
+def licence_ok(lic) -> bool:
+    return bool(LICENCE_OK.match(normalise_licence(lic)))
+
+
 # collected by mining networks / scraping services: provenance not defensible in a thesis
 SCRAPED_HINTS = re.compile(r"bittensor|subnet\s*\d+|\bminers?\b|apify|scraped with|snscrape|twscrape|"
                            r"nitter|selenium|without (the )?api", re.I)
@@ -58,7 +74,7 @@ TABULAR_EXT = (".parquet", ".csv", ".tsv", ".jsonl", ".json", ".csv.gz", ".jsonl
 
 COLS = {
     "text": ["text", "full_text", "rawcontent", "raw_content", "tweet", "tweet_text", "content", "post", "body",
-             "message", "weibo_text", "text_raw", "微博正文", "正文", "内容", "sentence", "clean_text"],
+             "message", "weibo_text", "text_raw", "review", "comment", "comment_text", "微博正文", "正文", "内容", "sentence", "clean_text"],
     "id": ["id", "tweet_id", "id_str", "status_id", "post_id", "mid", "weibo_id", "微博id", "博文id", "idstr"],
     "date": ["created_at", "date", "datetime", "timestamp", "time", "created_time", "epoch", "publish_time",
              "发布时间", "posted_at", "tweet_created_at", "createdat"],
@@ -231,8 +247,8 @@ class DatasetImporter:
         low = card.lower()
         if c["gated"]:
             return False, "gated", {"reason": "gated/restricted access (needs a manual request)"}
-        lic = (c.get("license") or "").lower()
-        if not LICENCE_OK.match(lic) and not self.s.datasets_allow_unknown_license:
+        lic = normalise_licence(c.get("license"))
+        if not licence_ok(lic) and not self.s.datasets_allow_unknown_license:
             return False, "licence", {"reason": f"licence not open or unknown: {lic or 'none'}"}
         provenance = "scraped" if SCRAPED_HINTS.search(card) else "research"
         if provenance == "scraped" and not self.s.datasets_allow_scraped:
@@ -413,6 +429,52 @@ class DatasetImporter:
             reply_count=_num(row.get(m["replies"])) if "replies" in m else None,
             community=src[:200], source_method=src[:200],
         )
+
+    def find(self, ref: str) -> dict | None:
+        """'hf:owner/name', 'zenodo:12345', a huggingface.co/zenodo.org URL or a bare HF id -> candidate."""
+        ref = ref.strip().rstrip("/")
+        m = re.search(r"zenodo\.org/(?:records|record)/(\d+)", ref) or re.fullmatch(r"zenodo:(\d+)", ref)
+        if m:
+            r = self.http.get(f"{ZENODO_API}/{m.group(1)}")
+            if r.status_code != 200:
+                return None
+            h = r.json()
+            md = h.get("metadata", {})
+            files = [{"name": f["key"], "size": f.get("size", 0), "url": f["links"]["self"]}
+                     for f in h.get("files", []) if f["key"].lower().endswith(TABULAR_EXT)]
+            return {"source": "zenodo", "dataset_id": str(h["id"]), "title": md.get("title", ""),
+                    "url": h.get("links", {}).get("self_html") or ref, "license": (md.get("license") or {}).get("id"),
+                    "gated": md.get("access_right") != "open", "updated": md.get("publication_date"),
+                    "tags": md.get("keywords") or [], "files": files,
+                    "description": re.sub(r"<[^>]+>", " ", md.get("description") or "")[:3000]}
+        did = re.sub(r"^(hf:|https?://huggingface\.co/datasets/)", "", ref)
+        r = self.http.get(f"{HF_API}/{did}", params={"full": "true"}, headers=self.headers)
+        if r.status_code != 200:
+            return None
+        d = r.json()
+        card = d.get("cardData") or {}
+        tags = d.get("tags") or []
+        lic = card.get("license") or next((t.split(":", 1)[1] for t in tags if t.startswith("license:")), None)
+        return {"source": "hf", "dataset_id": d["id"], "title": card.get("pretty_name") or d["id"],
+                "url": f"https://huggingface.co/datasets/{d['id']}", "license": lic,
+                "gated": bool(d.get("gated")) or bool(d.get("private")) or bool(d.get("disabled")),
+                "updated": d.get("lastModified"), "tags": tags, "description": (d.get("description") or "")[:3000]}
+
+    def import_one(self, platform: str, ref: str) -> None:
+        """You chose this dataset: licence/access rules still apply, Qwen's topic screening is skipped."""
+        c = self.find(ref)
+        if c is None:
+            raise SystemExit(f"dataset not found: {ref}")
+        if c["gated"]:
+            raise SystemExit(f"{c['dataset_id']}: restricted access — request it on the website first")
+        if not licence_ok(c.get("license")) and not self.s.datasets_allow_unknown_license:
+            raise SystemExit(f"{c['dataset_id']}: licence '{c.get('license') or 'none'}' is not open "
+                             "(set DATASETS_ALLOW_UNKNOWN_LICENSE=true only if you checked the terms yourself)")
+        log.info("[datasets/%s] manual import of %s (%s, licence %s)", platform, c["dataset_id"], c["source"], c["license"])
+        seen, kept, note = self.import_dataset(platform, c)
+        self.db.record_dataset(c, platform, "manual", {"reason": "chosen manually", "import_note": note},
+                               seen, kept, "imported" if kept else "empty")
+        print(f"{c['dataset_id']}: {seen} rows read, {kept} posts imported ({note})")
 
     # ------------------------------------------------------------ 5. loop
     def run(self, platforms: list[str] | None = None, max_imports: int = 10) -> None:

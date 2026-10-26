@@ -228,3 +228,11 @@ def test_dataset_row_import_filters_dates_and_pseudonymises():
     assert old is None
     assert ok.hashtags == ["气候变化"] and "alice" not in ok.text and "123" not in ok.author_uid
     assert ok.parent_post_uid == P.uid("weibo", "post:8") and b.edges[0].type == "reply"
+
+
+def test_dataset_licence_aliases():
+    from collector.datasets import licence_ok
+    for ok in ["cc-zero", "odc-pddl", "odc-odbl", "apache2.0", "mit-license", "cc-by-4.0", ["apache-2.0"], "cc0-1.0"]:
+        assert licence_ok(ok), ok
+    for bad in [None, "", "other", "unknown", "other-at"]:
+        assert not licence_ok(bad), bad
