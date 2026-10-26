@@ -90,6 +90,21 @@ class Settings:
 
     # Telegram public channels (web preview t.me/s/<channel>, no account)
     enable_telegram_web: bool = field(default_factory=lambda: _bool("ENABLE_TELEGRAM_WEB", True))
+    # Telegram official API (free, https://my.telegram.org): keyword search, public groups, comments.
+    # When set and logged in (python -m collector telegram-login) it replaces the web preview.
+    telegram_api_id: str = field(default_factory=lambda: _env("TELEGRAM_API_ID"))
+    telegram_api_hash: str = field(default_factory=lambda: _env("TELEGRAM_API_HASH"))
+    telegram_session: str = field(default_factory=lambda: _env("TELEGRAM_SESSION"))
+
+    # Public research datasets (Hugging Face Hub, Zenodo) for platforms we cannot collect from (X, Weibo)
+    datasets_auto: bool = field(default_factory=lambda: _bool("DATASETS_AUTO", True))  # in every `run` cycle
+    datasets_platforms: list[str] = field(default_factory=lambda: [x.strip() for x in _env("DATASETS_PLATFORMS", "x,weibo").split(",") if x.strip()])
+    datasets_max_rows: int = field(default_factory=lambda: int(_env("DATASETS_MAX_ROWS", "200000")))
+    datasets_max_mb: int = field(default_factory=lambda: int(_env("DATASETS_MAX_MB", "2000")))
+    datasets_respect_dates: bool = field(default_factory=lambda: _bool("DATASETS_RESPECT_DATES", True))
+    datasets_allow_unknown_license: bool = field(default_factory=lambda: _bool("DATASETS_ALLOW_UNKNOWN_LICENSE", False))
+    datasets_allow_scraped: bool = field(default_factory=lambda: _bool("DATASETS_ALLOW_SCRAPED", False))
+    hf_token: str = field(default_factory=lambda: _env("HF_TOKEN"))
 
     # Time balance (same budget for every month DATE_FROM..DATE_TO)
     discovery_posts_per_month: int = field(default_factory=lambda: int(_env("DISCOVERY_POSTS_PER_MONTH", "0")))

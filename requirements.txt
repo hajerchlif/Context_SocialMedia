@@ -6,3 +6,4 @@ pyarrow>=16
 zstandard>=0.22
 beautifulsoup4>=4.12
 pytest>=8
+telethon>=1.36

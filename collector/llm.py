@@ -83,6 +83,11 @@ class LocalLLM:
             "mastodon": "real hashtags (without #) exactly as people type them on Mastodon (e.g. ClimateChange, LLM), no underscores, no invented tags",
             "reddit": "subreddit names (without r/)",
             "telegram": "usernames (without @) of REAL, existing, well-known public Telegram channels (news outlets, organisations). Only names you are certain exist; return fewer rather than inventing",
+            "dataset_x": ("short search queries (2-5 words, English) to find PUBLIC research datasets of tweets "
+                          "(Twitter/X posts) about this domain on Hugging Face or Zenodo, e.g. 'climate tweets 2023'"),
+            "dataset_weibo": ("short search queries (English or Chinese) to find PUBLIC research datasets of Sina Weibo "
+                              "posts about this domain on Hugging Face or Zenodo, e.g. 'weibo health', '微博 数据集'"),
+            "telegram_api": "short keyword searches (1-3 words, English or French) to find public Telegram channels and discussion groups by name or title",
             "youtube": "YouTube search queries",
             "lemmy": "short search queries (2-4 words) that would match post titles on Lemmy, the fediverse Reddit alternative",
             "stackexchange": ("Stack Exchange 'site:tag' pairs, using ONLY these sites: stackoverflow, ai, datascience, "
@@ -105,13 +110,24 @@ class LocalLLM:
                     clean.append(s)
         return clean[:n]
 
-    def score_accounts(self, domain: str, description: str, accounts: list[dict]) -> dict[str, float]:
-        """accounts: [{"id": key, "bio": str, "sample": [post texts]}] -> {id: score 0..1}"""
+    def score_accounts(self, domain: str, description: str, accounts: list[dict],
+                       entity: str = "account") -> dict[str, float]:
+        """accounts: [{"id": key, "bio": str, "sample": [post texts]}] -> {id: score 0..1}
+
+        entity="channel" (Telegram): channels are broadcast by media, organisations or creators, so
+        they are judged on topical fit instead of being rejected for not being individuals."""
         if not accounts:
             return {}
-        sys = ("You are a strict annotator. For each account decide how much it is a genuine individual "
-               "regularly posting about the domain (not a brand, not a bot, not spam). "
-               "Answer ONLY JSON: {\"scores\": {\"<id>\": <0..1>}}")
+        if entity == "channel":
+            sys = ("You are a strict annotator. Each item is a public Telegram channel or group. Score how "
+                   "much it regularly posts real content about the domain. News outlets, organisations, "
+                   "experts, creators and discussion groups are fine. Give 0 to spam, ads, casinos, "
+                   "betting, crypto pumps, giveaways, adult content or unrelated topics. "
+                   "Answer ONLY JSON: {\"scores\": {\"<id>\": <0..1>}}")
+        else:
+            sys = ("You are a strict annotator. For each account decide how much it is a genuine individual "
+                   "regularly posting about the domain (not a brand, not a bot, not spam). "
+                   "Answer ONLY JSON: {\"scores\": {\"<id>\": <0..1>}}")
         lines = []
         for a in accounts:
             sample = " | ".join((a.get("sample") or [])[:4])[:600]
@@ -126,6 +142,30 @@ class LocalLLM:
             except (TypeError, ValueError):
                 continue
         return res
+
+    def judge_dataset(self, platform: str, domains: list[tuple[str, str]], card: str) -> dict:
+        """Read a dataset card. -> {platform_match, has_post_text, relevant, domains, period, reason}"""
+        names = {"x": "X / Twitter (tweets)", "weibo": "Sina Weibo (微博 posts)"}
+        sys = ("You screen public research datasets for a PhD corpus of social-media posts (2023-2026) on "
+               "context-aware user interest modelling and community detection. Read the dataset card and answer "
+               "ONLY JSON: {\"platform_match\": bool (rows are posts/comments FROM the named platform), "
+               "\"has_post_text\": bool (the post text itself is included, not only IDs to re-hydrate), "
+               "\"relevant\": bool (useful for at least one domain, or general-topic posts), "
+               "\"domains\": [domain names], \"period\": \"years covered or unknown\", "
+               "\"reason\": \"one short sentence\"}. Be strict: benchmarks of tiny size (<500 posts), "
+               "pure image datasets, ID-only releases and synthetic/LLM-generated posts are not acceptable.")
+        dl = "\n".join(f"- {n}: {d}" for n, d in domains)
+        out = self.ask_json(sys, f"Platform wanted: {names.get(platform, platform)}\nDomains:\n{dl}\n\nCARD:\n{card[:7000]}")
+        return out if isinstance(out, dict) else {"reason": "LLM gave no answer"}
+
+    def map_columns(self, platform: str, sample_row: dict) -> dict[str, str]:
+        """Ask which column holds the post text / id / date / user... -> {field: column}"""
+        sys = ("Map dataset columns to fields. Answer ONLY JSON with any of these keys whose column exists: "
+               "text (the post text), id (post id), date (creation date), user (author id or name), "
+               "parent (id of the post it replies to / reposts), root (conversation id), lang, hashtags. "
+               "Values are exact column names from the row. Omit keys you cannot find.")
+        out = self.ask_json(sys, f"Platform: {platform}\nRow: {json.dumps(sample_row, ensure_ascii=False)[:3000]}")
+        return {k: v for k, v in out.items() if isinstance(v, str)} if isinstance(out, dict) else {}
 
     def label_posts(self, domains: list[str], posts: list[dict]) -> dict[str, dict]:
         """posts: [{"id", "text"}] -> {id: {domain, relevance, topic, intent, stance, entities}}"""
