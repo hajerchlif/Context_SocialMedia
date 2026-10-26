@@ -9,6 +9,9 @@
   label                       LLM annotation of posts (domain, topic, intent, stance, entities)
   run --all [--loop H]        discover -> expand -> threads -> label (repeat every H hours)
   reddit-archives             ingest .zst dumps from REDDIT_ARCHIVE_DIR
+  datasets [-p x -p weibo]    Qwen finds, screens and imports public X/Weibo research datasets
+  datasets-status             what was imported or rejected, and why
+  telegram-login              one-time login for the Telegram API (needs TELEGRAM_API_ID/HASH)
   export                      Parquet export to data/export
   stats                       counts per platform
   dashboard                   web progress page on :8080
@@ -40,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == "dashboard":
         from .dashboard import serve
         serve()
+        return 0
+
+    if cmd == "telegram-login":
+        from .connectors.telegram_api import login
+        login(settings)
         return 0
 
     from .pipeline import Pipeline
@@ -81,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
             pl.db.save(b)
             total += len(b.posts)
             logging.info("reddit archives: %d items", total)
+    elif cmd == "datasets":
+        pl.datasets(plats)
+    elif cmd == "datasets-status":
+        for r in pl.db.datasets():
+            print(f"{r['platform']:6} {r['status']:9} {r['source']:7} {r['dataset_id'][:55]:55} "
+                  f"{(r['license'] or '-'):14} {r['rows_imported'] or 0:>8}  {(r['reason'] or '')[:90]}")
     elif cmd == "export":
         from .export import export_all
         print(export_all(pl.db, DATA_DIR / "export", per_month=a.per_month, date_from=settings.date_from))

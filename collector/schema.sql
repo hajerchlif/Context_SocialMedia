@@ -126,3 +126,21 @@ CREATE TABLE IF NOT EXISTS collection_runs (
     errors      INTEGER DEFAULT 0,
     note        TEXT
 );
+
+-- Public research datasets (X, Weibo...) screened and imported by `python -m collector datasets`.
+-- One row per dataset seen: provenance and licence are kept so the thesis can cite what was used.
+CREATE TABLE IF NOT EXISTS dataset_imports (
+    source         TEXT NOT NULL,          -- hf | zenodo
+    dataset_id     TEXT NOT NULL,
+    platform       TEXT NOT NULL,          -- x | weibo
+    title          TEXT,
+    url            TEXT,
+    license        TEXT,
+    provenance     TEXT,                   -- research | scraped | gated | licence
+    judgement      JSONB,                  -- Qwen's screening (period, domains, reason)
+    rows_seen      INTEGER,
+    rows_imported  INTEGER,
+    status         TEXT NOT NULL,          -- imported | rejected | empty | error
+    updated_at     TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (source, dataset_id)
+);

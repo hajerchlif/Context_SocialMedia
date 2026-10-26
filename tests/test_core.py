@@ -181,3 +181,50 @@ def test_stackexchange_title_unescaped():
     q = {"question_id": 1, "title": "Wijngaarden &amp; Happer&#39;s paper", "body": "<p>x</p>",
          "creation_date": 1700000000, "owner": {"account_id": 1, "user_id": 1}}
     assert c._question(q, "earthscience", "s").posts[0].text.startswith("Wijngaarden & Happer's paper")
+
+
+# ---------------------------------------------------------------- Telegram + public datasets
+def test_telegram_linked_channels_snowball():
+    from collector.connectors.telegram_web import linked_channels
+    html = ('<a href="https://t.me/ai_newz/123">x</a> <a href="https://t.me/joinchat/AAA">j</a> '
+            'see @hacker_news_feed and @mybot and mail me@example.org <a href="https://t.me/s/self_chan">s</a>')
+    out = linked_channels(html, own="self_chan")
+    assert out == ["ai_newz", "hacker_news_feed"]
+
+
+def test_telegram_sample_does_not_fake_post_count():
+    c = TelegramWebConnector(settings(), P)
+    html = """<div class="tgme_widget_message" data-post="chan/5"><time datetime="2024-03-01T10:00:00+00:00"></time>
+              <div class="tgme_widget_message_text">hello <a href="https://t.me/other_channel">o</a></div></div>"""
+    b, _ = c.parse_page(html, "chan")
+    assert [r for r, _ in b.discovered_users] == ["other_channel"]
+    assert c.entity == "channel"
+
+
+def test_dataset_column_guess_and_dates():
+    from collector.datasets import guess_columns, parse_any_date
+    m = guess_columns(["id_str", "full_text", "created_at", "user_id", "in_reply_to_status_id", "lang"])
+    assert m == {"text": "full_text", "id": "id_str", "date": "created_at", "user": "user_id",
+                 "parent": "in_reply_to_status_id", "lang": "lang"}
+    m = guess_columns(["博文id", "微博正文", "发布时间", "user_id"])
+    assert m["text"] == "微博正文" and m["date"] == "发布时间" and m["id"] == "博文id"
+    assert parse_any_date("Wed Oct 10 20:19:24 +0000 2023").year == 2023
+    assert parse_any_date(1700000000000).year == 2023
+    assert parse_any_date("2024-01-24 21:40").month == 1
+    assert parse_any_date("2024年3月5日 10:00").day == 5
+    assert parse_any_date("n/a") is None
+
+
+def test_dataset_row_import_filters_dates_and_pseudonymises():
+    from collector.datasets import DatasetImporter
+    from collector.models import Batch
+    s = settings()
+    imp = DatasetImporter(s, None, None, False, P, [])
+    m = {"text": "text", "date": "date", "user": "user", "id": "id", "parent": "reply"}
+    b, seen = Batch(), set()
+    ok = imp._post("weibo", "dataset:hf:t", {"text": "#气候变化#很热 @alice", "date": "2024-05-01 10:00", "user": "123",
+                                              "id": "9", "reply": "8"}, m, "anon", b, seen)
+    old = imp._post("weibo", "dataset:hf:t", {"text": "old", "date": "2019-05-01", "user": "1", "id": "1"}, m, "anon", b, seen)
+    assert old is None
+    assert ok.hashtags == ["气候变化"] and "alice" not in ok.text and "123" not in ok.author_uid
+    assert ok.parent_post_uid == P.uid("weibo", "post:8") and b.edges[0].type == "reply"

@@ -1,6 +1,7 @@
 """PostgreSQL access: schema creation, idempotent upserts, queues."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import psycopg
@@ -186,3 +187,25 @@ class DB:
                       count(DISTINCT p.root_post_uid) AS threads, min(p.created_at) AS first, max(p.created_at) AS last
                FROM posts p GROUP BY p.platform ORDER BY posts DESC"""
         ).fetchall()
+
+    # ---------- public datasets ----------
+    def dataset_statuses(self) -> dict[tuple[str, str], str]:
+        rows = self.conn.execute("SELECT source, dataset_id, status FROM dataset_imports").fetchall()
+        return {(r["source"], r["dataset_id"]): r["status"] for r in rows}
+
+    def record_dataset(self, c: dict, platform: str, provenance: str, judgement: dict,
+                       seen: int, kept: int, status: str) -> None:
+        self.conn.execute(
+            """INSERT INTO dataset_imports (source, dataset_id, platform, title, url, license, provenance,
+                                            judgement, rows_seen, rows_imported, status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (source, dataset_id) DO UPDATE SET status = EXCLUDED.status,
+                 judgement = EXCLUDED.judgement, rows_seen = EXCLUDED.rows_seen,
+                 rows_imported = EXCLUDED.rows_imported, provenance = EXCLUDED.provenance, updated_at = now()""",
+            (c["source"], c["dataset_id"], platform, (c.get("title") or "")[:500], c.get("url"), c.get("license"),
+             provenance, json.dumps(judgement, ensure_ascii=False, default=str), seen, kept, status))
+
+    def datasets(self) -> list[dict]:
+        return self.conn.execute(
+            """SELECT platform, status, source, dataset_id, license, rows_imported, judgement->>'reason' AS reason
+               FROM dataset_imports ORDER BY platform, status, rows_imported DESC NULLS LAST""").fetchall()

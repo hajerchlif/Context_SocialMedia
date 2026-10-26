@@ -1,2 +1,11 @@
 domain,kind,value
-ai_tech,channel,exemple_channel
+ai_tech,channel,ai_newz
+ai_tech,channel,hacker_news_feed
+politics_society,channel,euronews
+politics_society,channel,france24_en
+politics_society,channel,FRANCE24_fr
+sports,channel,fabrizioromano
+sports,channel,espn
+sports,channel,transfermarkt
+culture_entertainment,channel,pitchfork
+culture_entertainment,channel,variety

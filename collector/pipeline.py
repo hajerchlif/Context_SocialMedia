@@ -95,20 +95,24 @@ class Pipeline:
             log.warning("LLM unavailable: only manual seeds will be used")
             return
         for c in self.connectors(platforms):
-            kind = PLATFORM_KIND_FOR_LLM.get(c.platform)
+            kind = getattr(c, "llm_kind", None) or PLATFORM_KIND_FOR_LLM.get(c.platform)
             if not kind:
                 continue
             for d in self.domains:
-                items = self.llm.propose_queries(d.name, d.description, d.keywords, c.platform, n)
+                items = self.llm.propose_queries(d.name, d.description, d.keywords,
+                                                 getattr(c, "llm_hint", None) or c.platform, n)
                 for it in items:
                     self.db.add_seed(c.platform, d.name, kind, it, origin="llm")
                 log.info("[%s] %s: LLM proposed %s", c.platform, d.name, items)
 
     def discover(self, platforms: list[str] | None = None) -> None:
         if self.llm_ok:
-            have = {s["platform"] for s in self.db.seeds() if s["origin"] == "llm"}
-            todo = [c.platform for c in self.connectors(platforms)
-                    if c.platform in PLATFORM_KIND_FOR_LLM and c.platform not in have]
+            have = {(s["platform"], s["kind"]) for s in self.db.seeds() if s["origin"] == "llm"}
+            todo = []
+            for c in self.connectors(platforms):
+                kind = getattr(c, "llm_kind", None) or PLATFORM_KIND_FOR_LLM.get(c.platform)
+                if kind and (c.platform, kind) not in have:
+                    todo.append(c.platform)
             if todo:  # e.g. a newly added platform gets its own Qwen proposals
                 self.propose(todo)
         for c in self.connectors(platforms):
@@ -199,12 +203,13 @@ class Pipeline:
                 by_domain.setdefault(r["domain"] or "", []).append(
                     {"id": str(i), "raw": r["raw_id"], "bio": samples[r["raw_id"]].get("bio", ""),
                      "sample": samples[r["raw_id"]].get("sample", [])})
+        entity = getattr(c, "entity", "account")
         for dom, accs in by_domain.items():
             d = self.dom_by_name.get(dom)
             desc = d.description if d else "any topic (snowball neighbour)"
             for k in range(0, len(accs), 8):
                 chunk = accs[k:k + 8]
-                res = self.llm.score_accounts(dom or "general", desc, chunk)
+                res = self.llm.score_accounts(dom or "general", desc, chunk, entity=entity)
                 for a in chunk:
                     if a["id"] in res:
                         scores[a["raw"]] = res[a["id"]]
@@ -338,9 +343,23 @@ class Pipeline:
                 log.info("labelled %d posts", done)
         self.db.run_end(run, done, 0)
 
+    # ------------------------------------------------------- 5. datasets
+    def datasets(self, platforms: list[str] | None = None) -> None:
+        """X / Weibo: Qwen finds, screens and imports public research datasets (HF Hub, Zenodo)."""
+        from .datasets import DatasetImporter
+
+        DatasetImporter(self.s, self.db, self.llm, self.llm_ok, self.p, self.domains).run(platforms)
+
     # --------------------------------------------------------------- all
     def run_all(self, platforms: list[str] | None = None) -> None:
         t0 = time.time()
+        if self.s.datasets_auto:
+            wanted = [x for x in self.s.datasets_platforms if not platforms or x in platforms]
+            if wanted:
+                try:
+                    self.datasets(wanted)
+                except Exception as e:  # noqa: BLE001
+                    log.exception("datasets step failed: %s", e)
         self.discover(platforms)
         self.expand(platforms)
         self.threads(platforms)

@@ -2,6 +2,12 @@
 
 Only public broadcast channels expose this page. Comments/private groups are NOT collected.
 robots.txt is respected; if the page is unavailable we skip the channel.
+
+Discovery without an account cannot search Telegram by keyword, so channels are found by:
+  * manual seeds (config/seeds/telegram.csv) and Qwen proposals, each checked to really exist;
+  * snowball: channels linked or @mentioned in the messages of channels already collected.
+For keyword search, public groups (real users) and comments, use the official API instead
+(TELEGRAM_API_ID / TELEGRAM_API_HASH, see telegram_api.py).
 """
 from __future__ import annotations
 
@@ -15,6 +21,27 @@ from ..models import Batch, PostRec, UserRec, parse_ts
 from .base import Connector
 
 log = logging.getLogger(__name__)
+
+_CH = r"[A-Za-z][A-Za-z0-9_]{4,31}"
+_LINK_RE = re.compile(r"https?://(?:t\.me|telegram\.me)/(?:s/)?(" + _CH + r")(?:/\d+)?(?:[\"?#]|$)")
+_MENTION_RE = re.compile(r"(?<![\w/@.])@(" + _CH + r")\b")
+# t.me paths that are not channels
+_NOT_CHANNELS = {"joinchat", "addstickers", "share", "proxy", "socks", "iv", "addlist", "boost",
+                 "contact", "setlanguage", "addtheme", "login", "confirmphone", "c", "s", "telegram"}
+
+
+def linked_channels(html_or_text: str, own: str = "") -> list[str]:
+    """Public channel usernames linked (t.me/...) or @mentioned in a page — the snowball frontier."""
+    found = {m.group(1) for m in _LINK_RE.finditer(html_or_text)}
+    found |= {m.group(1) for m in _MENTION_RE.finditer(html_or_text)}
+    own_l = own.lower()
+    out = []
+    for ch in sorted(found, key=str.lower):
+        low = ch.lower()
+        if low == own_l or low in _NOT_CHANNELS or low.endswith("bot") or low in {c.lower() for c in out}:
+            continue
+        out.append(ch)
+    return out
 
 
 def _count(s: str | None) -> int | None:
@@ -31,6 +58,7 @@ def _count(s: str | None) -> int | None:
 class TelegramWebConnector(Connector):
     platform = "telegram"
     query_kinds = ("channel",)
+    entity = "channel"      # relevance gate judges channels on topic, not on being an individual
 
     def __init__(self, settings, pseudo):
         super().__init__(settings, pseudo)
@@ -75,6 +103,13 @@ class TelegramWebConnector(Connector):
                 m = re.search(r"t\.me/([^/]+)/(\d+)", reply["href"])
                 parent = self.uid(f"{m.group(1)}/{m.group(2)}") if m else None
             p_uid = self.uid(post_ref)
+            for other in linked_channels(str(txt_el) if txt_el else "", channel):
+                b.discovered_users.append((other, self.uid(other)))
+            fwd = msg.select_one("a.tgme_widget_message_forwarded_from_name[href]")
+            if fwd:
+                m = _LINK_RE.search(fwd["href"] + '"')
+                if m and m.group(1).lower() != channel.lower():
+                    b.discovered_users.append((m.group(1), self.uid(m.group(1))))
             b.posts.append(PostRec(
                 post_uid=p_uid, platform=self.platform, author_uid=ch_uid,
                 text=self.p.rewrite_mentions(self.platform, text), created_at=ts, hashtags=hashtags, urls=urls,
@@ -130,6 +165,22 @@ class TelegramWebConnector(Connector):
             log.info("telegram channel %r does not exist or has no public page — ignored", ch)
         return b
 
+    def follows(self, raw_id: str, limit: int = 200) -> Batch:
+        """Snowball: channels this channel links to, mentions or forwards from (no account needed)."""
+        b = Batch()
+        try:
+            r = self.http.get(f"https://t.me/s/{raw_id}")
+        except Blocked:
+            return b
+        if r.status_code != 200:
+            return b
+        page, _ = self.parse_page(r.text, raw_id)
+        seen = {}
+        for raw, uid in page.discovered_users + [(c, self.uid(c)) for c in linked_channels(r.text, raw_id)]:
+            seen.setdefault(raw.lower(), (raw, uid))
+        b.discovered_users = list(seen.values())[:limit]
+        return b
+
     def resolve(self, kind: str, value: str) -> str | None:
         return value.strip().lstrip("@").replace("https://t.me/", "").strip("/") or None
 
@@ -141,5 +192,7 @@ class TelegramWebConnector(Connector):
         if r.status_code != 200:
             return {"bio": "", "sample": []}
         page, _ = self.parse_page(r.text, raw_id)
-        return {"bio": page.users[0].bio if page.users else "", "posts_count": len(page.posts),
-                "sample": [p.text for p in page.posts if p.text][:8]}
+        # posts_count is NOT the number of posts on this preview page (≈20 at most): leave it unknown,
+        # otherwise MIN_POSTS_PER_USER silently rejects almost every channel.
+        return {"bio": page.users[0].bio if page.users else "", "posts_count": None,
+                "kind": "channel", "sample": [p.text for p in page.posts if p.text][:8]}
