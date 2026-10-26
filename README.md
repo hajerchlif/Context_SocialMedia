@@ -26,7 +26,7 @@ le « cerveau » est **Qwen3 14B** (Ollama, sur votre GPU) qui pilote la collect
 | Telegram | Sans compte : pages publiques `t.me/s/<canal>` + snowball (canaux cités ou transférés). **Recommandé** : API officielle gratuite (`TELEGRAM_API_ID`/`HASH`) → recherche par mots-clés, groupes publics (vrais utilisateurs), commentaires, historique complet | ✅ (API si configurée) |
 | Reddit | API officielle OAuth gratuite plus dumps `.zst` pour 2023-2024 | ✅ si clés ou dumps |
 | YouTube | clé API gratuite (10 000 unités par jour) | ✅ si clé |
-| **X et Weibo (jeux de données publiés)** | Qwen cherche sur Hugging Face et Zenodo, lit chaque fiche, garde les jeux sous licence ouverte avec le texte des posts, importe les lignes 2023→aujourd'hui. Tout est tracé dans `dataset_imports` | ✅ (automatique) |
+| **X, Weibo, Reddit, Facebook, Instagram (jeux de données publiés)** | Qwen cherche sur Hugging Face et Zenodo, lit chaque fiche, garde les jeux sous licence ouverte avec le texte des posts, importe les lignes 2023→aujourd'hui. Tout est tracé dans `dataset_imports` | ✅ (automatique) |
 | X, Facebook/Instagram, TikTok | **accès chercheur officiel uniquement** (pas de scraping avec connexion ni de contournement anti-bot) | ⏸ auto-désactivé |
 
 ## Démarrage (Ubuntu + GPU NVIDIA)
@@ -80,6 +80,8 @@ Le collecteur reste en lecture seule : il ne rejoint aucun groupe, n'écrit rien
 - écarte les jeux à accès restreint, sans licence ouverte (`DATASETS_ALLOW_UNKNOWN_LICENSE=false`) ou collectés par scraping/réseaux de minage comme Bittensor (`DATASETS_ALLOW_SCRAPED=false`) ;
 - fait lire la fiche à Qwen : vraie plateforme, texte présent, domaine utile ;
 - importe les posts datés entre `DATE_FROM` et aujourd'hui (`DATASETS_RESPECT_DATES=true`), avec auteurs pseudonymisés, dans `posts` (plateforme `x` ou `weibo`, `source_method = dataset:hf:<id>`).
+
+Autres plateformes possibles : `DATASETS_PLATFORMS=x,weibo,reddit,facebook,instagram`. Pour Reddit, la politique de Reddit (Responsible Builder Policy) considère comme non conforme la recherche sur des données Reddit obtenues hors du programme Reddit for Researchers : vérifiez avec votre comité d'éthique avant d'utiliser ces jeux.
 
 Chaque jeu vu est enregistré dans la table `dataset_imports` (licence, provenance, raison de Qwen, lignes importées) : c'est la liste à citer dans la thèse. Vérifiez la licence de chaque jeu importé avant publication.
 
