@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--loop", type=float, default=0, help="repeat every N hours")
     ap.add_argument("--per-month", type=int, default=0, help="export: also write a time-balanced sample (N posts per platform-month)")
     ap.add_argument("-v", "--verbose", action="store_true")
-    a = ap.parse_args(argv)
+    a = ap.parse_intermixed_args(argv)  # allows: dataset-import -p weibo hf:owner/name
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
