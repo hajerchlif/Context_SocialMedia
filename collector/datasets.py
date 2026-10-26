@@ -41,10 +41,18 @@ ZENODO_API = "https://zenodo.org/api/records"
 BASE_QUERIES = {
     "x": ["twitter", "tweets", "twitter dataset", "x.com posts"],
     "weibo": ["weibo", "sina weibo", "微博"],
+    "reddit": ["reddit", "reddit comments", "reddit posts", "subreddit"],
+    "facebook": ["facebook", "facebook posts", "facebook comments"],
+    "instagram": ["instagram", "instagram posts", "instagram captions"],
 }
 PLATFORM_WORDS = {
     "x": ("twitter", "tweet", "x.com", "x (formerly", "formerly twitter"),
     "weibo": ("weibo", "微博"),
+    "reddit": ("reddit", "subreddit"),
+    # "facebook" alone matches every Meta AI dataset (facebook/...): require posts/comments/pages
+    "facebook": ("facebook post", "facebook comment", "facebook page", "facebook group", "posts from facebook",
+                 "comments from facebook", "facebook data", "fb post"),
+    "instagram": ("instagram",),
 }
 # licences that allow non-commercial academic reuse
 LICENCE_OK = re.compile(r"^(cc0|cc-by|cc-by-sa|cc-by-nc|cc-by-nc-sa|cc-by-4\.0|cc-by-sa-4\.0|cc-by-nc-4\.0|"

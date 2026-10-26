@@ -87,6 +87,12 @@ class LocalLLM:
                           "(Twitter/X posts) about this domain on Hugging Face or Zenodo, e.g. 'climate tweets 2023'"),
             "dataset_weibo": ("short search queries (English or Chinese) to find PUBLIC research datasets of Sina Weibo "
                               "posts about this domain on Hugging Face or Zenodo, e.g. 'weibo health', '微博 数据集'"),
+            "dataset_reddit": ("short search queries (2-5 words, English) to find PUBLIC research datasets of Reddit "
+                               "posts or comments about this domain on Hugging Face or Zenodo, e.g. 'reddit climate'"),
+            "dataset_facebook": ("short search queries (2-5 words, English or French) to find PUBLIC research datasets "
+                                 "of Facebook posts or comments about this domain, e.g. 'facebook posts health'"),
+            "dataset_instagram": ("short search queries (2-5 words, English or French) to find PUBLIC research datasets "
+                                  "of Instagram posts/captions about this domain, e.g. 'instagram captions sport'"),
             "telegram_api": "short keyword searches (1-3 words, English or French) to find public Telegram channels and discussion groups by name or title",
             "youtube": "YouTube search queries",
             "lemmy": "short search queries (2-4 words) that would match post titles on Lemmy, the fediverse Reddit alternative",
@@ -145,7 +151,8 @@ class LocalLLM:
 
     def judge_dataset(self, platform: str, domains: list[tuple[str, str]], card: str) -> dict:
         """Read a dataset card. -> {platform_match, has_post_text, relevant, domains, period, reason}"""
-        names = {"x": "X / Twitter (tweets)", "weibo": "Sina Weibo (微博 posts)"}
+        names = {"x": "X / Twitter (tweets)", "weibo": "Sina Weibo (微博 posts)", "reddit": "Reddit (posts or comments)",
+                 "facebook": "Facebook (posts or comments)", "instagram": "Instagram (posts, captions or comments)"}
         sys = ("You screen public research datasets for a PhD corpus of social-media posts (2023-2026) on "
                "context-aware user interest modelling and community detection. Read the dataset card and answer "
                "ONLY JSON: {\"platform_match\": bool (rows are posts/comments FROM the named platform), "
